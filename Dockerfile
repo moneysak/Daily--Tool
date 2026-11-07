@@ -32,6 +32,6 @@ LABEL \
     io.hass.type="addon"
 
 # s6-overlay deaktivieren und FastAPI direkt als PID 1 starten
+ENV PYTHONPATH="/app:/app/src:/app/src/backend"
 ENTRYPOINT []
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
+CMD ["python3", "-m", "uvicorn", "src.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
