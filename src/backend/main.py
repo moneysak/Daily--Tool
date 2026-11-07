@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from db.database import SessionLocal, engine, Base
 from crud import task as crud_task
 from schemas import task as schema_task
+from fastapi.staticfiles import StaticFiles
 
 Base.metadata.create_all(bind=engine)
 
@@ -19,11 +20,7 @@ def get_db():
         yield db
     finally:
         db.close()
-
-@app.get("/")
-def read_root():
-    return {"message": "Willkommen zur Alltags-Manager Dashboard API"}
-
+        
 @app.post("/tasks/", response_model=schema_task.Task)
 def create_task(task: schema_task.TaskCreate, db: Session = Depends(get_db)):
     return crud_task.create_task(db=db, task=task)
@@ -65,3 +62,5 @@ async def chat_with_hermes(payload: ChatMessage):
             return response.json()
         except httpx.HTTPError as e:
             raise HTTPException(status_code=502, detail=f"Kommunikationsfehler: {str(e)}")
+
+app.mount("/", StaticFiles(directory="/app/src/frontend", html=True), name="frontend")
