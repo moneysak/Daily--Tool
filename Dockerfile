@@ -1,5 +1,5 @@
 # Offizielles HA Alpine Base Image verwenden
-ARG BUILD_FROM=homeassistant/amd64-base-python:3.12
+ARG BUILD_FROM
 FROM $BUILD_FROM
 
 # System-Abhängigkeiten installieren
