@@ -1,4 +1,2 @@
 #!/bin/bash
-set -e
-
-python3 /data/workspace/execute.py
+python3 /data/workspace/run2.py

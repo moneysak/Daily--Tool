@@ -29,3 +29,7 @@ def create_task(task: schema_task.TaskCreate, db: Session = Depends(get_db)):
 def read_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     tasks = crud_task.get_tasks(db, skip=skip, limit=limit)
     return tasks
+
+@app.put("/tasks/{task_id}", response_model=schema_task.Task)
+def update_task(task_id: int, task: schema_task.TaskUpdate, db: Session = Depends(get_db)):
+    return crud_task.update_task(db=db, task_id=task_id, task=task)

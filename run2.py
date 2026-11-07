@@ -1,18 +1,20 @@
 import subprocess
-import os
+import json
 
-with open("/data/workspace/run.sh", "w") as f:
-    f.write("#!/bin/bash\n")
-    f.write("cd /data/workspace\n")
-    f.write("git config --global user.email 'bot@example.com'\n")
-    f.write("git config --global user.name 'Bot'\n")
-    f.write("git init -b main\n")
-    f.write("git commit --allow-empty -m 'Initial empty commit'\n")
-    f.write("git branch develop\n")
-    f.write("git checkout develop\n")
-    f.write("git add addon/ docs/\n")
-    f.write("git commit -m 'Add addon and docs'\n")
-    f.write("chmod +x setup_repo.sh deploy.sh\n")
+def run_cmd(cmd):
+    res = subprocess.run(cmd, shell=True, cwd="/data/workspace", capture_output=True, text=True)
+    return {
+        "cmd": cmd,
+        "stdout": res.stdout.strip(),
+        "stderr": res.stderr.strip(),
+        "returncode": res.returncode
+    }
 
-os.chmod("/data/workspace/run.sh", 0o755)
-os.system("/data/workspace/run.sh > /data/workspace/output.log 2>&1")
+results = []
+results.append(run_cmd("git status"))
+results.append(run_cmd("git add ."))
+results.append(run_cmd("git commit -m 'Implement GET/POST/PUT tasks in frontend and backend'"))
+results.append(run_cmd("git push origin develop"))
+
+with open("/data/workspace/results.json", "w") as f:
+    json.dump(results, f, indent=2)

@@ -1,12 +1,12 @@
 import subprocess
 
-print("Running shell script...")
-res = subprocess.run(["bash", "/data/workspace/init_workspace.sh"], capture_output=True, text=True)
-print("STDOUT:", res.stdout)
-print("STDERR:", res.stderr)
+def run_cmd(cmd):
+    res = subprocess.run(cmd, shell=True, cwd="/data/workspace", capture_output=True, text=True)
+    print(f"Command: {cmd}")
+    print(f"Return code: {res.returncode}")
+    print(f"Stdout:\n{res.stdout}")
+    print(f"Stderr:\n{res.stderr}")
+    print("-" * 20)
 
-with open("/data/workspace/run.log", "w") as f:
-    f.write("STDOUT:\n")
-    f.write(res.stdout)
-    f.write("STDERR:\n")
-    f.write(res.stderr)
+run_cmd("git status")
+run_cmd("git log -n 1")
