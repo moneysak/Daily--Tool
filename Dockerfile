@@ -30,3 +30,8 @@ LABEL \
     io.hass.name="Alltags-Manager" \
     io.hass.description="FastAPI Backend für den Alltags-Manager" \
     io.hass.type="addon"
+
+# s6-overlay deaktivieren und FastAPI direkt als PID 1 starten
+ENTRYPOINT []
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
