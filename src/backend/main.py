@@ -37,26 +37,26 @@ def read_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 def update_task(task_id: int, task: schema_task.TaskUpdate, db: Session = Depends(get_db)):
     return crud_task.update_task(db=db, task_id=task_id, task=task)
 
-HERMES_API_URL = os.getenv("HERMES_API_URL")
-HERMES_API_TOKEN = os.getenv("HERMES_API_TOKEN")
-
 class ChatMessage(BaseModel):
     message: str
 
 @app.post("/api/hermes/chat")
 async def chat_with_hermes(payload: ChatMessage):
-    if not HERMES_API_URL or not HERMES_API_TOKEN:
-        raise HTTPException(status_code=500, detail="Hermes API nicht konfiguriert.")
-
+    # Read the Supervisor Token from the environment variable (with fallback to provided hardcoded one)
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "357f8b0f71eec28baf90dfd0c6132351cdf906d427d3c0fd7ff108caa8170c52f4d128510b7b08d461788bb29dabbc6e48e057a9810ddb3e")
+    
     headers = {
-        "Authorization": f"Bearer {HERMES_API_TOKEN}",
+        "Authorization": f"Bearer {supervisor_token}",
         "Content-Type": "application/json"
     }
+    
+    # Hardcoded URL for Home Assistant supervisor API
+    url = "http://supervisor/core/api/hermes/chat"
     
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
-                HERMES_API_URL, 
+                url, 
                 json={"message": payload.message}, 
                 headers=headers,
                 timeout=30.0
