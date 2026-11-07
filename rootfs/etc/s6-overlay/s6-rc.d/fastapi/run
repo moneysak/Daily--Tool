@@ -1,0 +1,9 @@
+#!/command/with-contenv bashio
+# bashio ist eine Bibliothek im HA Base-Image für Logging etc.
+bashio::log.info "Starte FastAPI Backend..."
+
+# Gehe ins Arbeitsverzeichnis
+cd /app
+
+# Starte Uvicorn über das Virtual Environment
+exec s6-setuidgid root /opt/venv/bin/uvicorn src.backend.main:app --host 0.0.0.0 --port 8099
