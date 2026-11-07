@@ -13,7 +13,16 @@ document.addEventListener('DOMContentLoaded', () => {
         `,
         'shopping': '<h1>Einkaufslisten</h1><p>Hier sind deine Einkaufslisten.</p>',
         'routines': '<h1>Routinen</h1><p>Hier sind deine Routinen.</p>',
-        'chat': '<h1>Hermes Chat</h1><p>Sprich mit Hermes.</p>'
+        'chat': `
+            <h1>Hermes Chat</h1>
+            <div id="chat-container">
+                <div id="chat-messages" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9;"></div>
+                <div class="chat-input-container">
+                    <input type="text" id="chat-input" placeholder="Nachricht an Hermes..." style="width: 70%;">
+                    <button id="send-chat-btn">Senden</button>
+                </div>
+            </div>
+        `
     };
 
     const apiBaseUrl = window.APP_CONFIG?.API_BASE_URL || "";
@@ -116,6 +125,70 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function attachChatListeners() {
+        const sendBtn = document.getElementById('send-chat-btn');
+        const input = document.getElementById('chat-input');
+        const messagesDiv = document.getElementById('chat-messages');
+
+        if (sendBtn && input && messagesDiv) {
+            async function sendMessage() {
+                const message = input.value.trim();
+                if (!message) return;
+
+                // User message
+                const userMsg = document.createElement('div');
+                userMsg.style.textAlign = 'right';
+                userMsg.style.marginBottom = '5px';
+                userMsg.innerHTML = `<strong>Du:</strong> ${message}`;
+                messagesDiv.appendChild(userMsg);
+                
+                input.value = '';
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+                try {
+                    const response = await fetch(`${apiBaseUrl}/api/hermes/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ message: message })
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || 'Fehler bei der Kommunikation mit Hermes.');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Hermes message
+                    const hermesMsg = document.createElement('div');
+                    hermesMsg.style.textAlign = 'left';
+                    hermesMsg.style.marginBottom = '5px';
+                    hermesMsg.innerHTML = `<strong>Hermes:</strong> ${data.message || data.response || JSON.stringify(data)}`;
+                    messagesDiv.appendChild(hermesMsg);
+                    
+                } catch (error) {
+                    console.error('Chat error:', error);
+                    const errorMsg = document.createElement('div');
+                    errorMsg.style.textAlign = 'left';
+                    errorMsg.style.marginBottom = '5px';
+                    errorMsg.style.color = 'red';
+                    errorMsg.innerHTML = `<strong>System:</strong> ${error.message}`;
+                    messagesDiv.appendChild(errorMsg);
+                }
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+
+            sendBtn.addEventListener('click', sendMessage);
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        }
+    }
+
     tabs.forEach(tab => {
         tab.addEventListener('click', (e) => {
             e.preventDefault();
@@ -133,6 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (target === 'tasks') {
                     loadTasks();
                     attachTaskListeners();
+                } else if (target === 'chat') {
+                    attachChatListeners();
                 }
             }
         });
@@ -146,6 +221,9 @@ document.addEventListener('DOMContentLoaded', () => {
               mainContent.innerHTML = contentMap['tasks'];
               loadTasks();
               attachTaskListeners();
+         } else if (target === 'chat') {
+              mainContent.innerHTML = contentMap['chat'];
+              attachChatListeners();
          }
     }
 
