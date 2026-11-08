@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from db.database import SessionLocal, engine, Base
 from crud import task as crud_task
 from schemas import task as schema_task
-from fastapi.staticfiles import StaticFiles
+from auth import require_auth, get_configured_password, create_session_token
 
 Base.metadata.create_all(bind=engine)
 
@@ -21,6 +21,25 @@ def get_db():
         yield db
     finally:
         db.close()
+
+class LoginRequest(BaseModel):
+    password: str
+
+@app.get("/api/auth/status")
+def auth_status(auth_info: dict = Depends(require_auth)):
+    return {"authenticated": True, "type": auth_info["auth"], "user": auth_info["user"]}
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest):
+    configured_pw = get_configured_password()
+    if not configured_pw:
+        token = create_session_token()
+        return {"success": True, "token": token, "message": "Kein Passwort konfiguriert (offener Modus)"}
+        
+    if payload.password == configured_pw:
+        token = create_session_token()
+        return {"success": True, "token": token}
+    raise HTTPException(status_code=401, detail="Falsches Passwort.")
         
 @app.post("/tasks/", response_model=schema_task.Task)
 def create_task(task: schema_task.TaskCreate, db: Session = Depends(get_db), auth: dict = Depends(require_auth)):
