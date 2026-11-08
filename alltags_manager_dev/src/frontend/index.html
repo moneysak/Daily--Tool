@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alltags-Manager Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Auth Modal (für Standalone / Direktzugriff) -->
+    <div id="auth-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h2>Sicherheitssperre</h2>
+            <p>Bitte gib das Passwort ein, um auf den Alltags-Manager zuzugreifen.</p>
+            <input type="password" id="auth-password-input" class="auth-input" placeholder="Passwort...">
+            <button id="auth-login-btn" class="btn-primary">Entsperren</button>
+            <div id="auth-error-msg" class="auth-error">Ungültiges Passwort</div>
+        </div>
+    </div>
+
+    <div class="glass-container" id="main-content">
+        <h1>Willkommen</h1>
+        <p>Dies ist dein Alltags-Manager Dashboard.</p>
+    </div>
+
+    <nav class="bottom-tab-bar">
+        <a href="#tasks" class="tab-item active" data-target="tasks">
+            <span class="icon">✓</span>
+            <span class="label">Aufgaben</span>
+        </a>
+        <a href="#shopping" class="tab-item" data-target="shopping">
+            <span class="icon">🛒</span>
+            <span class="label">Einkauf</span>
+        </a>
+        <a href="#routines" class="tab-item" data-target="routines">
+            <span class="icon">↻</span>
+            <span class="label">Routinen</span>
+        </a>
+        <a href="#chat" class="tab-item" data-target="chat">
+            <span class="icon">💬</span>
+            <span class="label">Hermes</span>
+        </a>
+    </nav>
+
+    <script src="app.js"></script>
+</body>
+</html>

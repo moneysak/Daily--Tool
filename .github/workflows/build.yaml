@@ -1,4 +1,4 @@
-name: Build Multi-Arch Add-on
+name: Build Multi-Arch Add-ons
 
 on:
   push:
@@ -14,13 +14,13 @@ permissions:
   packages: write
 
 jobs:
-  build:
-    name: Build & Push (${{ matrix.arch }})
+  build-prod:
+    name: Build Prod (${{ matrix.arch }})
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [aarch64, amd64]
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,11 +32,38 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Publish Add-on with Home Assistant Builder
+      - name: Build & Publish Prod Add-on
         uses: home-assistant/builder@master
         with:
           args: |
             --${{ matrix.arch }} \
             --target alltags_manager \
             --image "alltags-manager-{arch}" \
+            --docker-hub "ghcr.io/${{ github.repository_owner }}"
+
+  build-dev:
+    name: Build Dev (${{ matrix.arch }})
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [aarch64, amd64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Publish Dev Add-on
+        uses: home-assistant/builder@master
+        with:
+          args: |
+            --${{ matrix.arch }} \
+            --target alltags_manager_dev \
+            --image "alltags-manager-dev-{arch}" \
             --docker-hub "ghcr.io/${{ github.repository_owner }}"

@@ -14,6 +14,10 @@ homeassistant_api: true
 panel_icon: mdi:view-dashboard
 panel_title: "Alltags-Manager"
 panel_admin: false
+ports:
+  8000/tcp: 8050
+ports_description:
+  8000/tcp: "Webinterface Port (Standalone)"
 options:
   app_password: ""
 schema:
