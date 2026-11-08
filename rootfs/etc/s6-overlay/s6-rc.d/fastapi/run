@@ -3,7 +3,7 @@
 bashio::log.info "Starte FastAPI Backend..."
 
 # Gehe ins Arbeitsverzeichnis
-cd /app
+cd /app/backend
 
 # Starte Uvicorn über das Virtual Environment
-exec s6-setuidgid root /opt/venv/bin/uvicorn src.backend.main:app --host 0.0.0.0 --port 8099
+exec s6-setuidgid root /opt/venv/bin/uvicorn src.backend.main:app --host 0.0.0.0 --port 8000

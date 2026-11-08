@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from db.database import SessionLocal, engine, Base
 from crud import task as crud_task
 from schemas import task as schema_task
-from auth import require_auth, get_configured_password, create_session_token
+from fastapi.staticfiles import StaticFiles
 
 Base.metadata.create_all(bind=engine)
 
@@ -21,30 +21,7 @@ def get_db():
         yield db
     finally:
         db.close()
-
-class LoginRequest(BaseModel):
-    password: str
-
-@app.get("/api/auth/status")
-def auth_status(auth_info: dict = Depends(require_auth)):
-    return {"authenticated": True, "type": auth_info["auth"], "user": auth_info["user"]}
-
-@app.post("/api/auth/login")
-def login(payload: LoginRequest):
-    configured_pw = get_configured_password()
-    if not configured_pw:
-        token = create_session_token()
-        return {"success": True, "token": token, "message": "Kein Passwort konfiguriert (offener Modus)"}
         
-    if payload.password == configured_pw:
-        token = create_session_token()
-        return {"success": True, "token": token}
-    raise HTTPException(status_code=401, detail="Falsches Passwort.")
-
-@app.get("/")
-def read_root():
-    return {"message": "Willkommen zur Alltags-Manager Dashboard API"}
-
 @app.post("/tasks/", response_model=schema_task.Task)
 def create_task(task: schema_task.TaskCreate, db: Session = Depends(get_db), auth: dict = Depends(require_auth)):
     return crud_task.create_task(db=db, task=task)
@@ -95,4 +72,6 @@ async def chat_with_hermes(payload: ChatMessage, auth: dict = Depends(require_au
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"Kommunikationsfehler mit Hermes: {str(e)}")
+            raise HTTPException(status_code=502, detail=f"Kommunikationsfehler: {str(e)}")
+
+app.mount("/", StaticFiles(directory="/app/src/frontend", html=True), name="frontend")

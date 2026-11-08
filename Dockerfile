@@ -1,6 +1,7 @@
 # Offizielles HA Alpine Base Image verwenden
-ARG BUILD_FROM
-FROM $BUILD_FROM
+ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.20
+FROM ${BUILD_FROM}
+
 
 # System-Abhängigkeiten installieren
 RUN apk add --no-cache \
@@ -29,3 +30,8 @@ LABEL \
     io.hass.name="Alltags-Manager" \
     io.hass.description="FastAPI Backend für den Alltags-Manager" \
     io.hass.type="addon"
+
+# s6-overlay deaktivieren und FastAPI direkt als PID 1 starten
+ENV PYTHONPATH="/app:/app/src:/app/src/backend"
+ENTRYPOINT []
+CMD ["python3", "-m", "uvicorn", "src.backend.main:app", "--host", "0.0.0.0", "--port", "8099"]
