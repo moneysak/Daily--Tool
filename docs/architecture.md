@@ -1,54 +1,28 @@
-# Systemarchitektur: Alltags-Manager Dashboard
+# Alltags-Manager - Architektur
 
-## 1. Überblick
-Das Alltags-Manager Dashboard ist eine App zur täglichen Organisation, die einen Premium-Look (Hintergrund: `#070708`, Akzente: `#cba970`, Glassmorphism) bietet. Der Fokus liegt auf einer mobilen, Frontend-zentrierten Entwicklung mit einer Backend-API für die Persistenz.
+## Frontend
+*   Technologie: HTML, CSS, Vanilla JavaScript (iterativer Frontend-First Ansatz).
+*   Hosting: Home Assistant Ingress oder Cloudflare Tunnel.
 
-## 2. Technologie-Stack
-*   **Frontend:** HTML5, CSS3 (Glassmorphism, CSS-Variablen), JavaScript (Vanilla oder leichtgewichtiges Framework für PWA/SPA). Fonts: Outfit (Headings) & Plus Jakarta Sans (Body).
-*   **Backend:** Python 3 mit FastAPI.
-*   **Datenbank:** SQLite (via SQLAlchemy).
-*   **Deployment (Home Assistant Add-on):** 
-    * Bereitstellung als lokales Home Assistant Add-on basierend auf dem `ghcr.io/hassio-addons/alpine-base` Image.
-    * Prozessmanagement via **s6-overlay**.
-    * Persistenz der SQLite-Datenbank zwingend im `/data/`-Verzeichnis des Containers.
-    * Frontend und API werden nahtlos via **HA Ingress** eingebunden. Python-Abhängigkeiten werden sauber isoliert in einer `venv` installiert.
+## Backend
+*   Technologie: Python
+*   Datenbank: SQLite
+*   Speicherort: `/data/alltags_manager.db` (innerhalb des Hermes HA Add-ons)
 
-## 3. Architektur
-Die Architektur folgt dem Client-Server-Modell mit einer klaren Trennung von Frontend und Backend.
+## Komponenten-Analyse (Gemeldete Probleme)
 
-### 3.1 Frontend
-*   **Mobile-First Design:** Eine Bottom Tab Bar bietet Zugriff auf die Hauptbereiche: Aufgaben, Einkaufslisten, Routinen und Chat.
-*   **Styling:**
-    *   Dark Mode Basis (`#070708`).
-    *   Glassmorphism-Effekte für Container und Overlays (`backdrop-filter: blur()`).
-    *   Semantische Typografie (Outfit für Header, Plus Jakarta Sans für Lesbarkeit).
+1.  **Hermes Chat**
+    *   *Frontend:* Chat-UI mit Nachrichtenverlauf (User/Hermes).
+    *   *Backend/Integration:* API-Schnittstelle zur Hermes Agent Instanz (lokal oder via WebSocket), um natürliche Sprachbefehle direkt aus der App an Hermes zu senden.
+2.  **Aufgaben (Tasks)**
+    *   *Frontend:* Listenansicht (CRUD-Operationen) mit Checkboxen, Fälligkeitsdaten und Prioritäten.
+    *   *Backend:* SQLite-Tabelle `tasks` (id, title, description, due_date, status, priority). REST-Endpunkte für Verwaltung.
+3.  **Einkaufsliste**
+    *   *Frontend:* Spezifische Listenansicht für Artikel. Schnelleingabe.
+    *   *Backend:* SQLite-Tabelle `shopping_list` (id, item_name, quantity, category, checked). Optional: Synchronisation mit Home Assistant Todo-Listen.
+4.  **Routinen**
+    *   *Frontend:* Ansicht für wiederkehrende Abläufe (z.B. Morgenroutine).
+    *   *Backend:* SQLite-Tabelle `routines` und `routine_steps`. Logik zur automatischen Generierung von täglichen Instanzen dieser Routinen basierend auf einem Cron-ähnlichen Zeitplan.
 
-### 3.2 Backend (FastAPI)
-Das Backend folgt einer mehrschichtigen Architektur (Layered Architecture), um Controller (API-Routen), Geschäftslogik und Datenzugriff zu trennen.
-
-**Verzeichnisstruktur (`src/backend/`):**
-```text
-src/backend/
-├── main.py              # Uvicorn/FastAPI Entrypoint
-├── api/                 # API-Endpunkte
-├── db/                  # SQLite Datenbank-Setup (engine, session)
-├── models/              # SQLAlchemy Datenbankmodelle
-├── schemas/             # Pydantic Modelle für In/Out Validierung
-└── crud/                # Create, Read, Update, Delete Operationen
-```
-
-**Spezifika für SQLite & FastAPI:**
-*   SQLAlchemy Engine erfordert `connect_args={"check_same_thread": False}`.
-*   Dependency Injection via `yield` in einer `get_db()` Funktion stellt sicher, dass Sessions pro Request geöffnet und geschlossen werden.
-
-## 4. Datenmodell (Draft)
-*   **Aufgaben (Tasks):** ID, Titel, Status (Offen, Erledigt), Fälligkeit, Erstellt am.
-*   **Einkaufsliste (ShoppingList):** ID, Artikel, Menge, Status (Gekauft).
-*   **Routinen (Routines):** ID, Name, Frequenz, Letzte Ausführung.
-*   **Chat (Hermes):** (Schnittstelle zur externen Kommunikation/Lagerung von Chat-Historien, je nach Integration).
-
-## 5. Workflow
-1.  **Frontend-First:** Basis-HTML/CSS/JS Strukturen entwickeln, um das UI/UX (Glassmorphism, Navigation) abzusichern.
-2.  **Mock-API:** Erste Interaktionen mit Dummy-Daten implementieren.
-3.  **Backend-Integration:** FastAPI aufsetzen und SQLite-Modelle definieren.
-4.  **Verbindung:** Frontend-Aufrufe an das reale Backend anbinden.
+## Workflow
+Gemäß Systemvorgaben wird Code für spezifische Module nicht in `src/` geschrieben (sondern via Subagenten delegiert). Die Review-Ergebnisse werden in `docs/review.md` dokumentiert.
