@@ -26,10 +26,91 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const apiBaseUrl = window.APP_CONFIG?.API_BASE_URL || "";
+    let authToken = sessionStorage.getItem('alltags_manager_token') || "";
+
+    function getAuthHeaders() {
+        const headers = { 'Content-Type': 'application/json' };
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+            headers['X-Auth-Token'] = authToken;
+        }
+        return headers;
+    }
+
+    async function checkAuth() {
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/auth/status`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) {
+                showAuthModal();
+                return false;
+            }
+            hideAuthModal();
+            return true;
+        } catch (e) {
+            console.error("Auth status check failed:", e);
+            return true; // Fallback
+        }
+    }
+
+    function showAuthModal() {
+        const modal = document.getElementById('auth-modal');
+        if (modal) modal.style.display = 'flex';
+    }
+
+    function hideAuthModal() {
+        const modal = document.getElementById('auth-modal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    // Login Event Listeners
+    const loginBtn = document.getElementById('auth-login-btn');
+    const pwInput = document.getElementById('auth-password-input');
+    const errorMsg = document.getElementById('auth-error-msg');
+
+    if (loginBtn && pwInput) {
+        async function doLogin() {
+            const password = pwInput.value.trim();
+            if (!password) return;
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                if (!response.ok) {
+                    if (errorMsg) errorMsg.style.display = 'block';
+                    return;
+                }
+                const data = await response.json();
+                authToken = data.token;
+                sessionStorage.setItem('alltags_manager_token', authToken);
+                hideAuthModal();
+                if (errorMsg) errorMsg.style.display = 'none';
+                loadTasks();
+            } catch (err) {
+                if (errorMsg) {
+                    errorMsg.textContent = "Verbindungsfehler";
+                    errorMsg.style.display = 'block';
+                }
+            }
+        }
+        loginBtn.addEventListener('click', doLogin);
+        pwInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') doLogin();
+        });
+    }
 
     async function loadTasks() {
         try {
-            const response = await fetch(`${apiBaseUrl}/tasks/`);
+            const response = await fetch(`${apiBaseUrl}/tasks/`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) {
+                showAuthModal();
+                return;
+            }
             if (!response.ok) throw new Error('Failed to fetch tasks');
             const tasks = await response.json();
             renderTasks(tasks);
@@ -46,11 +127,13 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${apiBaseUrl}/tasks/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ title, completed: false })
             });
+            if (response.status === 401) {
+                showAuthModal();
+                return;
+            }
             if (!response.ok) throw new Error('Failed to add task');
             loadTasks();
         } catch (error) {
@@ -62,15 +145,34 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${apiBaseUrl}/tasks/${taskId}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ completed: !currentStatus })
             });
+            if (response.status === 401) {
+                showAuthModal();
+                return;
+            }
             if (!response.ok) throw new Error('Failed to update task');
             loadTasks();
         } catch(error) {
             console.error('Error updating task:', error);
+        }
+    }
+
+    async function deleteTask(taskId) {
+        try {
+            const response = await fetch(`${apiBaseUrl}/tasks/${taskId}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) {
+                showAuthModal();
+                return;
+            }
+            if (!response.ok) throw new Error('Failed to delete task');
+            loadTasks();
+        } catch (error) {
+            console.error('Error deleting task:', error);
         }
     }
 
@@ -86,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <input type="checkbox" ${task.completed ? 'checked' : ''} data-id="${task.id}" class="task-checkbox">
                     <span class="${task.completed ? 'completed' : ''}">${task.title}</span>
                 </label>
+                <button class="delete-task-btn" data-id="${task.id}" style="color: red; border: none; background: none; cursor: pointer;">🗑️</button>
             `;
             taskList.appendChild(li);
         });
@@ -94,9 +197,19 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.task-checkbox').forEach(checkbox => {
              checkbox.addEventListener('change', (e) => {
                   const taskId = e.target.getAttribute('data-id');
-                  const currentStatus = !e.target.checked; // Since it just changed, previous status is opposite
+                  const currentStatus = !e.target.checked;
                   toggleTaskComplete(taskId, currentStatus);
              });
+        });
+
+        // Add event listeners for delete buttons
+        document.querySelectorAll('.delete-task-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const taskId = e.target.getAttribute('data-id');
+                if (taskId) {
+                    deleteTask(taskId);
+                }
+            });
         });
     }
 
@@ -148,11 +261,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const response = await fetch(`${apiBaseUrl}/api/hermes/chat`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: getAuthHeaders(),
                         body: JSON.stringify({ message: message })
                     });
+                    
+                    if (response.status === 401) {
+                        showAuthModal();
+                        return;
+                    }
                     
                     if (!response.ok) {
                         const errorData = await response.json();
@@ -213,18 +329,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // Initial load for active tab
-    const activeTab = document.querySelector('.tab-item.active');
-    if (activeTab) {
-         const target = activeTab.getAttribute('data-target');
-         if (target === 'tasks') {
-              mainContent.innerHTML = contentMap['tasks'];
-              loadTasks();
-              attachTaskListeners();
-         } else if (target === 'chat') {
-              mainContent.innerHTML = contentMap['chat'];
-              attachChatListeners();
-         }
-    }
+    // Initial check
+    checkAuth().then(isAuth => {
+        const activeTab = document.querySelector('.tab-item.active');
+        if (activeTab && isAuth) {
+             const target = activeTab.getAttribute('data-target');
+             if (target === 'tasks') {
+                  mainContent.innerHTML = contentMap['tasks'];
+                  loadTasks();
+                  attachTaskListeners();
+             } else if (target === 'chat') {
+                  mainContent.innerHTML = contentMap['chat'];
+                  attachChatListeners();
+             }
+        }
+    });
 
 });
