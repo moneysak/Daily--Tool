@@ -13,8 +13,10 @@ from pydantic import BaseModel
 from db.database import SessionLocal, engine, Base, get_db, ensure_schema
 from crud import task as crud
 from crud import overview as crud_overview
+from crud import ha as crud_ha
 from schemas import task as schemas
 from schemas import overview as overview_schemas
+from schemas import ha as ha_schemas
 from auth import (
     require_auth,
     get_configured_password,
@@ -180,6 +182,64 @@ def read_overview(
                 detail="Ungültiges Datum. Erwartet wird YYYY-MM-DD.",
             )
     return crud_overview.build_overview(db, day, get_user_name())
+
+# --- Home-Assistant-Integration ---
+@app.get("/api/ha/agenda", response_model=ha_schemas.AgendaResponse)
+async def read_ha_agenda(
+    today: Optional[str] = None,
+    auth: dict = Depends(require_auth),
+):
+    """Termine aller konfigurierten HA-Kalender für einen Tag.
+
+    Liefert immer HTTP 200; ``available=False`` bei fehlendem Token, leerer
+    Konfiguration oder HA-Ausfall.
+    """
+    if today is None:
+        day = crud_overview.local_today()
+    else:
+        try:
+            day = date.fromisoformat(today)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="Ungültiges Datum. Erwartet wird YYYY-MM-DD.",
+            )
+    try:
+        data = await crud_ha.fetch_agenda(day)
+    except crud_ha.HAUnavailable:
+        return ha_schemas.AgendaResponse(available=False, date=day, events=[])
+    return ha_schemas.AgendaResponse(**data)
+
+
+@app.get("/api/ha/todos", response_model=ha_schemas.TodosResponse)
+async def read_ha_todos(auth: dict = Depends(require_auth)):
+    """Offene Items aller konfigurierten HA-To-do-Listen."""
+    try:
+        data = await crud_ha.fetch_todos()
+    except crud_ha.HAUnavailable:
+        return ha_schemas.TodosResponse(available=False, lists=[])
+    return ha_schemas.TodosResponse(**data)
+
+
+@app.post("/api/ha/todos/item")
+async def toggle_ha_todo(
+    payload: ha_schemas.TodoToggle,
+    auth: dict = Depends(require_auth),
+):
+    """Hakt ein HA-To-do-Item ab bzw. setzt es zurück (Rückschreiben nach HA)."""
+    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+        raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
+    try:
+        await crud_ha.set_todo_status(payload.entity_id, payload.uid, payload.completed)
+    except crud_ha.HAUnavailable:
+        raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
+    except crud_ha.HARejected as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}",
+        )
+    return {"status": "success"}
+
 
 # --- Hermes Chat API Proxy ---
 class ChatMessage(BaseModel):

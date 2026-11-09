@@ -23,8 +23,14 @@ options:
   user_name: ""
   hermes_api_url: ""
   hermes_api_key: ""
+  calendar_entities: []
+  todo_entities: []
 schema:
   app_password: "password?"
   user_name: "str?"
   hermes_api_url: "str?"
   hermes_api_key: "str?"
+  calendar_entities:
+    - "match(^calendar\\.[a-z0-9_]+$)?"
+  todo_entities:
+    - "match(^todo\\.[a-z0-9_]+$)?"

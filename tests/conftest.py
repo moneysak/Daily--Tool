@@ -30,11 +30,15 @@ APP_MODULES = [
     "db.database",
     "crud",
     "crud.task",
+    "crud.overview",
+    "crud.ha",
     "models",
     "models.task",
     "models.session",
     "schemas",
     "schemas.task",
+    "schemas.overview",
+    "schemas.ha",
 ]
 
 

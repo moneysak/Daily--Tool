@@ -45,7 +45,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
                 </div>
             </div>
+            <div id="agenda-slot"></div>
             <div id="today-sections" class="today-sections"></div>
+            <div id="todos-slot"></div>
             <div id="shopping-card-slot"></div>
         `,
         'tasks': `
@@ -866,6 +868,144 @@ document.addEventListener('DOMContentLoaded', () => {
         loadOverview();
     }
 
+    // --- HA-Integration: Termine & To-dos ---
+    function formatEventTime(iso) {
+        try {
+            const d = new Date(iso);
+            return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    async function loadAgenda() {
+        const slot = document.getElementById('agenda-slot');
+        if (!slot) return;
+        try {
+            const today = localDateString();
+            const response = await fetch(`${apiBaseUrl}/api/ha/agenda?today=${today}`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) { slot.innerHTML = ''; return; }
+            const data = await response.json();
+            if (!data.available) { slot.innerHTML = ''; return; }
+            renderAgenda(data);
+        } catch (error) {
+            console.warn('Error loading agenda:', error);
+            slot.innerHTML = '';
+        }
+    }
+
+    function renderAgenda(data) {
+        const slot = document.getElementById('agenda-slot');
+        if (!slot) return;
+        const events = (data && data.events) || [];
+        if (events.length === 0) { slot.innerHTML = ''; return; }
+        const rows = events.map(ev => {
+            const time = ev.all_day
+                ? '<span class="agenda-allday">Ganztägig</span>'
+                : `<span class="agenda-time">${escapeHtml(formatEventTime(ev.start))}</span>`;
+            const cal = ev.calendar_name
+                ? `<span class="agenda-cal">${escapeHtml(ev.calendar_name)}</span>`
+                : '';
+            return `
+                <li class="list-item agenda-item">
+                    ${time}
+                    <span class="item-text">${escapeHtml(ev.title)}</span>
+                    ${cal}
+                </li>`;
+        }).join('');
+        slot.innerHTML = `
+            <div class="today-block agenda-block">
+                <h2 class="section-title">Termine heute</h2>
+                <ul class="app-list">${rows}</ul>
+            </div>`;
+    }
+
+    async function loadTodos() {
+        const slot = document.getElementById('todos-slot');
+        if (!slot) return;
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/ha/todos`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) { slot.innerHTML = ''; return; }
+            const data = await response.json();
+            if (!data.available) { slot.innerHTML = ''; return; }
+            renderTodos(data);
+        } catch (error) {
+            console.warn('Error loading HA todos:', error);
+            slot.innerHTML = '';
+        }
+    }
+
+    function renderTodos(data) {
+        const slot = document.getElementById('todos-slot');
+        if (!slot) return;
+        const lists = ((data && data.lists) || []).filter(list => (list.items || []).length > 0);
+        if (lists.length === 0) { slot.innerHTML = ''; return; }
+        const blocks = lists.map(list => {
+            const rows = (list.items || []).map(item => `
+                <li class="list-item ha-todo-item" data-entity="${escapeHtml(list.entity_id)}" data-uid="${escapeHtml(item.uid)}">
+                    <label class="item-left">
+                        <input type="checkbox" class="ha-todo-checkbox" data-entity="${escapeHtml(list.entity_id)}" data-uid="${escapeHtml(item.uid)}">
+                        <span class="item-text">${escapeHtml(item.summary)}</span>
+                    </label>
+                </li>`).join('');
+            return `
+                <div class="todo-list">
+                    <h3 class="todo-list-title">${escapeHtml(list.name)}</h3>
+                    <ul class="app-list">${rows}</ul>
+                </div>`;
+        }).join('');
+        slot.innerHTML = `
+            <div class="today-block todos-block">
+                <h2 class="section-title">To-dos</h2>
+                ${blocks}
+            </div>`;
+        // Event-Delegation je Slot-Zustand neu setzen (Slot-Element bleibt stabil).
+        slot.onchange = (e) => {
+            const cb = e.target.closest('.ha-todo-checkbox');
+            if (cb) handleHaTodoToggle(cb);
+        };
+    }
+
+    async function handleHaTodoToggle(cb) {
+        if (!cb.checked) return;
+        const entity = cb.dataset.entity;
+        const uid = cb.dataset.uid;
+        const row = cb.closest('.ha-todo-item');
+        cb.disabled = true;
+        if (row) row.classList.add('is-completed');
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/ha/todos/item`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ entity_id: entity, uid: uid, completed: true })
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) throw new Error('HA todo toggle failed');
+            // Optimistisch: Zeile nach kurzer Bestätigung entfernen (kein Reload).
+            setTimeout(() => { if (row && row.parentNode) row.remove(); }, 600);
+        } catch (error) {
+            console.warn('Error toggling HA todo:', error);
+            if (row) {
+                row.classList.remove('is-completed');
+                let msg = row.querySelector('.ha-todo-error');
+                if (!msg) {
+                    msg = document.createElement('span');
+                    msg.className = 'ha-todo-error';
+                    row.appendChild(msg);
+                }
+                msg.textContent = 'Konnte nicht abhaken';
+            }
+            cb.checked = false;
+            cb.disabled = false;
+        }
+    }
+
     function attachTodayListeners() {
         document.querySelectorAll('.overview-task-checkbox').forEach(cb => {
             cb.addEventListener('change', (e) => {
@@ -892,6 +1032,8 @@ document.addEventListener('DOMContentLoaded', () => {
             mainContent.innerHTML = contentMap[target];
             if (target === 'today') {
                 loadOverview();
+                loadAgenda();
+                loadTodos();
             } else if (target === 'tasks') {
                 loadTasks();
                 attachTaskListeners();

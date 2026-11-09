@@ -568,3 +568,73 @@ h1, h2, h3 {
     font-size: 20px;
 }
 
+
+
+/* HA-Integration: Termine & To-dos */
+.agenda-item {
+    gap: 12px;
+}
+
+.agenda-time {
+    min-width: 64px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.agenda-allday {
+    min-width: 64px;
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(203, 169, 112, 0.15);
+    color: var(--accent-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.agenda-cal {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
+.todo-list + .todo-list {
+    margin-top: 10px;
+}
+
+.todo-list-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 6px 0 6px;
+}
+
+.ha-todo-item .item-left {
+    flex-grow: 1;
+}
+
+.ha-todo-error {
+    font-size: 0.72rem;
+    color: #fca5a5;
+    white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+    .agenda-time,
+    .agenda-allday {
+        min-width: 52px;
+    }
+
+    .agenda-item .item-text {
+        word-break: break-word;
+    }
+}
