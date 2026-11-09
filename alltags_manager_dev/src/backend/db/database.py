@@ -36,6 +36,39 @@ def get_db():
         db.close()
 
 
+def ensure_schema(engine) -> None:
+    """Mini-Migration: ergänzt fehlende Spalten in bestehenden SQLite-Tabellen.
+
+    ``Base.metadata.create_all`` legt keine neuen Spalten in bereits
+    existierenden Tabellen an. Deshalb werden per ``PRAGMA table_info`` die
+    vorhandenen Spalten ermittelt und fehlende via ``ALTER TABLE ... ADD COLUMN``
+    ergänzt. Idempotent — ein zweiter Aufruf ändert nichts.
+    """
+    migrations = {
+        "tasks": {
+            "due_date": "DATE",
+            "completed_at": "DATETIME",
+        },
+        "routines": {
+            "weekdays": "VARCHAR",
+            "last_completed_on": "DATE",
+        },
+    }
+    with engine.begin() as conn:
+        for table, columns in migrations.items():
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+            if not rows:
+                # Tabelle existiert (noch) nicht; create_all hat sie bereits
+                # vollständig angelegt -> nichts zu tun.
+                continue
+            existing = {row[1] for row in rows}
+            for column, column_type in columns.items():
+                if column not in existing:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
+                    )
+
+
 # Modelle registrieren, damit ``Base.metadata.create_all(bind=engine)`` die
 # ``sessions``-Tabelle anlegt. Der Import steht bewusst am Dateiende, da
 # ``models.session`` wiederum ``Base`` aus diesem Modul benötigt.

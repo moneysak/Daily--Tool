@@ -72,6 +72,38 @@ def _options_path() -> str:
     return os.environ.get("ALLTAGS_OPTIONS_PATH", DEFAULT_OPTIONS_PATH)
 
 
+# Maximale Länge des angezeigten Benutzernamens (Frontend escaped ohnehin).
+USER_NAME_MAX_LEN = 50
+
+
+def get_user_name():
+    """Liest den optionalen Anzeigenamen für die Begrüßung.
+
+    Reihenfolge: Umgebungsvariable ``USER_NAME`` hat Vorrang, danach
+    ``user_name`` aus der Add-on-Optionen-Datei (gleiche Pfadlogik wie
+    ``get_configured_password``). Leer/nur Whitespace -> ``None``. Die Länge
+    wird auf ``USER_NAME_MAX_LEN`` begrenzt.
+    """
+    name = ""
+    env_name = os.environ.get("USER_NAME", "")
+    if env_name and env_name.strip():
+        name = env_name.strip()
+    else:
+        path = _options_path()
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as handle:
+                    options = json.load(handle)
+                value = options.get("user_name")
+                if value is not None:
+                    name = str(value).strip()
+        except Exception:
+            pass
+    if not name:
+        return None
+    return name[:USER_NAME_MAX_LEN]
+
+
 def get_configured_password() -> str:
     """Liest das konfigurierte Passwort.
 

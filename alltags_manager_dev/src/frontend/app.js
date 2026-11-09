@@ -31,13 +31,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Tab Contents (HTML Templates) ---
     const contentMap = {
+        'today': `
+            <div class="content-header">
+                <h1 class="greeting" id="today-greeting">Willkommen</h1>
+                <p class="subtitle" id="today-date"></p>
+            </div>
+            <div class="progress-card glass-panel">
+                <div class="progress-head">
+                    <span>Fortschritt heute</span>
+                    <span id="progress-text">0 von 0 erledigt</span>
+                </div>
+                <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Tagesfortschritt">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+            <div id="today-sections" class="today-sections"></div>
+            <div id="shopping-card-slot"></div>
+        `,
         'tasks': `
             <div class="content-header">
                 <h1>✓ Aufgaben</h1>
                 <p class="subtitle">Persönliche To-Dos verwalten</p>
             </div>
-            <div class="input-card glass-panel">
-                <input type="text" id="new-task-title" placeholder="Neue Aufgabe hinzufügen..." class="app-input">
+            <div class="input-card glass-panel flex-row">
+                <input type="text" id="new-task-title" placeholder="Neue Aufgabe hinzufügen..." class="app-input flex-2">
+                <input type="date" id="new-task-due" class="app-input flex-1" title="Fälligkeitsdatum (optional)">
                 <button id="add-task-btn" class="app-btn-accent">Hinzufügen</button>
             </div>
             <div class="list-wrapper">
@@ -68,8 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="input-card glass-panel flex-row">
                 <input type="text" id="new-routine-title" placeholder="Routine (z. B. Morgen-Meditation)..." class="app-input flex-2">
+                <select id="new-routine-frequency" class="app-input flex-1" title="Häufigkeit">
+                    <option value="daily">Täglich</option>
+                    <option value="weekly">Wöchentlich</option>
+                </select>
                 <button id="add-routine-btn" class="app-btn-accent">Anlegen</button>
             </div>
+            <div id="weekday-chips" class="weekday-chips" style="display: none;"></div>
             <div class="list-wrapper">
                 <ul id="routines-list" class="app-list"></ul>
             </div>
@@ -206,12 +229,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function addTask(title) {
+    async function addTask(title, dueDate) {
         try {
+            const payload = { title, completed: false };
+            if (dueDate) payload.due_date = dueDate;
             const response = await fetch(`${apiBaseUrl}/tasks/`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ title, completed: false })
+                body: JSON.stringify(payload)
             });
             if (response.status === 401) return handleUnauthorized();
             loadTasks();
@@ -256,10 +281,14 @@ document.addEventListener('DOMContentLoaded', () => {
         tasks.forEach(task => {
             const li = document.createElement('li');
             li.className = `list-item ${task.completed ? 'is-completed' : ''}`;
+            const dueBadge = task.due_date
+                ? `<span class="badge ${isOverdue(task.due_date) ? 'overdue-badge' : ''}">${escapeHtml(formatDueLabel(task.due_date))}</span>`
+                : '';
             li.innerHTML = `
                 <label class="item-left">
                     <input type="checkbox" class="task-checkbox" data-id="${task.id}" ${task.completed ? 'checked' : ''}>
                     <span class="item-text">${escapeHtml(task.title)}</span>
+                    ${dueBadge}
                 </label>
                 <button class="delete-btn" data-id="${task.id}" title="Löschen">✕</button>
             `;
@@ -285,12 +314,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function attachTaskListeners() {
         const addBtn = document.getElementById('add-task-btn');
         const input = document.getElementById('new-task-title');
+        const dueInput = document.getElementById('new-task-due');
         if (addBtn && input) {
             const handleAdd = () => {
                 const val = input.value.trim();
                 if (val) {
-                    addTask(val);
+                    addTask(val, dueInput ? dueInput.value : '');
                     input.value = '';
+                    if (dueInput) dueInput.value = '';
                 }
             };
             addBtn.addEventListener('click', handleAdd);
@@ -446,12 +477,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function addRoutine(title) {
+    async function addRoutine(title, frequency, weekdays) {
         try {
+            const payload = { title, frequency: frequency || "daily", active: true, completed_today: false };
+            if (payload.frequency === "weekly" && weekdays && weekdays.length) {
+                payload.weekdays = weekdays;
+            }
             await fetch(`${apiBaseUrl}/api/routines/`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ title, frequency: "daily", active: true, completed_today: false })
+                body: JSON.stringify(payload)
             });
             loadRoutines();
         } catch (error) {
@@ -499,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <label class="item-left">
                     <input type="checkbox" class="routine-checkbox" data-id="${rt.id}" ${rt.completed_today ? 'checked' : ''}>
                     <span class="item-text">${escapeHtml(rt.title)}</span>
-                    <span class="item-badge">Heute</span>
+                    <span class="item-badge">${escapeHtml(routineScheduleLabel(rt))}</span>
                 </label>
                 <button class="delete-btn" data-id="${rt.id}" title="Löschen">✕</button>
             `;
@@ -522,15 +557,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+    function buildWeekdayChips() {
+        const container = document.getElementById('weekday-chips');
+        if (!container) return;
+        container.innerHTML = WEEKDAY_LABELS.map((label, day) =>
+            `<button type="button" class="weekday-chip" data-day="${day}">${label}</button>`
+        ).join('');
+        container.querySelectorAll('.weekday-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                chip.classList.toggle('selected');
+            });
+        });
+    }
+
     function attachRoutinesListeners() {
         const addBtn = document.getElementById('add-routine-btn');
         const input = document.getElementById('new-routine-title');
+        const freqSelect = document.getElementById('new-routine-frequency');
+        const chips = document.getElementById('weekday-chips');
+
+        buildWeekdayChips();
+
+        const syncChipsVisibility = () => {
+            if (!chips || !freqSelect) return;
+            chips.style.display = freqSelect.value === 'weekly' ? 'flex' : 'none';
+        };
+        if (freqSelect) {
+            freqSelect.addEventListener('change', syncChipsVisibility);
+            syncChipsVisibility();
+        }
+
         if (addBtn && input) {
             const handleAdd = () => {
                 const val = input.value.trim();
-                if (val) {
-                    addRoutine(val);
-                    input.value = '';
+                if (!val) return;
+                const frequency = freqSelect ? freqSelect.value : 'daily';
+                let weekdays = [];
+                if (frequency === 'weekly' && chips) {
+                    weekdays = Array.from(chips.querySelectorAll('.weekday-chip.selected'))
+                        .map(chip => parseInt(chip.getAttribute('data-day'), 10));
+                }
+                addRoutine(val, frequency, weekdays);
+                input.value = '';
+                if (chips) {
+                    chips.querySelectorAll('.weekday-chip.selected').forEach(c => c.classList.remove('selected'));
                 }
             };
             addBtn.addEventListener('click', handleAdd);
@@ -610,6 +682,206 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // 5. TODAY OVERVIEW LOGIC ("Heute")
+    // ==========================================
+    function localDateString(d = new Date()) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function formatLocalDate(d) {
+        try {
+            return d.toLocaleDateString('de-DE', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            });
+        } catch (e) {
+            return localDateString(d);
+        }
+    }
+
+    function isOverdue(dueDate) {
+        return !!dueDate && dueDate < localDateString();
+    }
+
+    function formatDueLabel(dueDate) {
+        if (!dueDate) return '';
+        if (dueDate === localDateString()) return 'heute';
+        return 'fällig ' + dueDate;
+    }
+
+    function routineScheduleLabel(routine) {
+        const frequency = (routine.frequency || 'daily').toLowerCase();
+        if (frequency === 'weekly') {
+            const days = Array.isArray(routine.weekdays) ? routine.weekdays : [];
+            if (days.length) {
+                return days.map(d => WEEKDAY_LABELS[d] || '').filter(Boolean).join('/');
+            }
+            return 'wöchentlich';
+        }
+        return 'täglich';
+    }
+
+    // Reine Funktion: Begrüßung aus lokaler Stunde + optionalem Namen.
+    function greetingFor(hour, name) {
+        let base;
+        if (hour >= 5 && hour <= 10) {
+            base = 'Guten Morgen';
+        } else if (hour >= 11 && hour <= 17) {
+            base = 'Guten Tag';
+        } else {
+            base = 'Guten Abend';
+        }
+        const cleanName = (name || '').trim();
+        return cleanName ? `${base}, ${cleanName}` : base;
+    }
+
+    async function loadOverview() {
+        const today = localDateString();
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/overview?today=${today}`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) throw new Error('Overview load failed');
+            const overview = await response.json();
+            renderTodaySections(overview);
+            attachTodayListeners();
+        } catch (error) {
+            console.error('Error loading overview:', error);
+            const sections = document.getElementById('today-sections');
+            if (sections) sections.innerHTML = '<div class="list-msg">Konnte die Übersicht nicht laden.</div>';
+        }
+    }
+
+    function renderTodaySections(overview) {
+        const now = new Date();
+        const tasks = overview.tasks || {};
+        const routines = overview.routines || [];
+        const progress = overview.progress || { done: 0, total: 0, percent: 0 };
+
+        const greetingEl = document.getElementById('today-greeting');
+        if (greetingEl) greetingEl.textContent = greetingFor(now.getHours(), overview.user_name);
+        const dateEl = document.getElementById('today-date');
+        if (dateEl) dateEl.textContent = formatLocalDate(now);
+
+        const progressText = document.getElementById('progress-text');
+        if (progressText) progressText.textContent = `${progress.done} von ${progress.total} erledigt`;
+        const fill = document.getElementById('progress-fill');
+        if (fill) fill.style.width = `${progress.percent}%`;
+        const track = document.getElementById('progress-track');
+        if (track) track.setAttribute('aria-valuenow', String(progress.percent));
+
+        const sections = document.getElementById('today-sections');
+        if (!sections) return;
+
+        const taskRow = (task, cls) => `
+            <li class="list-item ${task.completed ? 'is-completed' : ''} ${cls || ''}">
+                <label class="item-left">
+                    <input type="checkbox" class="overview-task-checkbox" data-id="${task.id}" ${task.completed ? 'checked' : ''}>
+                    <span class="item-text">${escapeHtml(task.title)}</span>
+                    ${task.is_overdue ? '<span class="badge overdue-badge">überfällig</span>' : ''}
+                </label>
+            </li>`;
+
+        const taskSection = (title, items, cls) => {
+            if (!items || items.length === 0) return '';
+            return `
+                <div class="today-block ${cls || ''}">
+                    <h2 class="section-title">${escapeHtml(title)}</h2>
+                    <ul class="app-list">${items.map(t => taskRow(t, cls)).join('')}</ul>
+                </div>`;
+        };
+
+        const routineSection = (items) => {
+            if (!items || items.length === 0) return '';
+            const rows = items.map(r => `
+                <li class="list-item ${r.completed_today ? 'is-completed' : ''}">
+                    <label class="item-left">
+                        <input type="checkbox" class="overview-routine-checkbox" data-id="${r.id}" ${r.completed_today ? 'checked' : ''}>
+                        <span class="item-text">${escapeHtml(r.title)}</span>
+                    </label>
+                </li>`).join('');
+            return `
+                <div class="today-block routines-block">
+                    <h2 class="section-title">Routinen</h2>
+                    <ul class="app-list">${rows}</ul>
+                </div>`;
+        };
+
+        const blocks = [
+            taskSection('Überfällig', tasks.overdue, 'overdue'),
+            taskSection('Heute', tasks.due_today, 'due'),
+            routineSection(routines),
+            taskSection('Irgendwann', tasks.someday, 'someday'),
+            taskSection('Heute erledigt', tasks.done_today, 'done')
+        ].filter(Boolean);
+
+        sections.innerHTML = blocks.length > 0
+            ? blocks.join('')
+            : '<div class="list-msg empty">Heute ist nichts zu tun. Genieß den Tag! ☀</div>';
+
+        renderTodayShoppingCard(overview.shopping || { open_count: 0 });
+    }
+
+    function renderTodayShoppingCard(shopping) {
+        const slot = document.getElementById('shopping-card-slot');
+        if (!slot) return;
+        const count = shopping.open_count || 0;
+        let text;
+        if (count === 0) {
+            text = 'Nichts zu kaufen 🎉';
+        } else if (count === 1) {
+            text = 'Heute einkaufen: 1 Artikel';
+        } else {
+            text = `Heute einkaufen: ${count} Artikel`;
+        }
+        slot.innerHTML = `
+            <button type="button" class="shopping-card glass-panel" id="overview-shopping-card">
+                <span class="shopping-card-icon">🛒</span>
+                <span class="shopping-card-text">${escapeHtml(text)}</span>
+            </button>`;
+        const card = document.getElementById('overview-shopping-card');
+        if (card) card.addEventListener('click', () => activateTab('shopping'));
+    }
+
+    async function toggleOverviewTask(id, done) {
+        const response = await fetch(`${apiBaseUrl}/tasks/${id}`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ completed: done })
+        });
+        if (response.status === 401) return handleUnauthorized();
+        loadOverview();
+    }
+
+    async function toggleOverviewRoutine(id, done) {
+        const response = await fetch(`${apiBaseUrl}/api/routines/${id}`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ completed_today: done })
+        });
+        if (response.status === 401) return handleUnauthorized();
+        loadOverview();
+    }
+
+    function attachTodayListeners() {
+        document.querySelectorAll('.overview-task-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const id = e.target.getAttribute('data-id');
+                toggleOverviewTask(id, e.target.checked);
+            });
+        });
+        document.querySelectorAll('.overview-routine-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const id = e.target.getAttribute('data-id');
+                toggleOverviewRoutine(id, e.target.checked);
+            });
+        });
+    }
+
+    // ==========================================
     // Tab Navigation & Rendering
     // ==========================================
     function renderActiveTab() {
@@ -618,7 +890,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = activeTab.getAttribute('data-target');
         if (contentMap[target]) {
             mainContent.innerHTML = contentMap[target];
-            if (target === 'tasks') {
+            if (target === 'today') {
+                loadOverview();
+            } else if (target === 'tasks') {
                 loadTasks();
                 attachTaskListeners();
             } else if (target === 'shopping') {
@@ -633,12 +907,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Zentrale Tab-Aktivierung (Klick + programmatisch, z.B. Einkaufs-Karte).
+    function activateTab(name) {
+        let found = false;
+        tabs.forEach(t => {
+            const isTarget = t.getAttribute('data-target') === name;
+            t.classList.toggle('active', isTarget);
+            if (isTarget) found = true;
+        });
+        if (found) renderActiveTab();
+    }
+
     tabs.forEach(tab => {
         tab.addEventListener('click', (e) => {
             e.preventDefault();
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            renderActiveTab();
+            activateTab(tab.getAttribute('data-target'));
         });
     });
 

@@ -10,6 +10,9 @@ RUN apk add --no-cache \
     build-base \
     python3-dev
 
+# Container-Zeitzone (nötig für local_today()/Aggregationslogik in crud/overview.py)
+ENV TZ=Europe/Berlin
+
 # Virtual Environment erstellen
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV

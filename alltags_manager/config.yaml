@@ -20,9 +20,11 @@ ports_description:
   8000/tcp: "Webinterface Port (Standalone)"
 options:
   app_password: ""
+  user_name: ""
   hermes_api_url: ""
   hermes_api_key: ""
 schema:
   app_password: "password?"
+  user_name: "str?"
   hermes_api_url: "str?"
   hermes_api_key: "str?"

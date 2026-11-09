@@ -2,18 +2,23 @@ import os
 import re
 import json
 import httpx
+from datetime import date
+from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from db.database import SessionLocal, engine, Base, get_db
+from db.database import SessionLocal, engine, Base, get_db, ensure_schema
 from crud import task as crud
+from crud import overview as crud_overview
 from schemas import task as schemas
+from schemas import overview as overview_schemas
 from auth import (
     require_auth,
     get_configured_password,
+    get_user_name,
     create_session_token,
     verify_password,
     revoke_session,
@@ -25,8 +30,9 @@ from auth import (
     reset_login_failures,
 )
 
-# Tabellen erstellen (inkl. sessions)
+# Tabellen erstellen (inkl. sessions), danach Mini-Migration für Alt-DBs.
 Base.metadata.create_all(bind=engine)
+ensure_schema(engine)
 
 app = FastAPI(title="Alltags-Manager API")
 
@@ -150,6 +156,30 @@ def delete_routine(routine_id: int, db: Session = Depends(get_db), auth: dict = 
     if not deleted:
         raise HTTPException(status_code=404, detail="Routine nicht gefunden.")
     return {"status": "success", "deleted_id": routine_id}
+
+# --- Heute-Übersicht API ---
+@app.get("/api/overview", response_model=overview_schemas.Overview)
+def read_overview(
+    today: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth: dict = Depends(require_auth),
+):
+    """Liefert die aggregierte "Heute"-Übersicht.
+
+    ``today`` (YYYY-MM-DD) ist optional und macht Tests/den Frontend-Aufruf
+    deterministisch; ohne Param wird das lokale Serverdatum verwendet.
+    """
+    if today is None:
+        day = crud_overview.local_today()
+    else:
+        try:
+            day = date.fromisoformat(today)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="Ungültiges Datum. Erwartet wird YYYY-MM-DD.",
+            )
+    return crud_overview.build_overview(db, day, get_user_name())
 
 # --- Hermes Chat API Proxy ---
 class ChatMessage(BaseModel):
