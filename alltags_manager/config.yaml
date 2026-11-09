@@ -1,6 +1,6 @@
 name: "Alltags-Manager"
 description: "Alltags-Organisations-App (FastAPI)"
-version: "1.0.0"
+version: "1.0.1"
 slug: "alltags_manager"
 image: "ghcr.io/moneysak/alltags-manager-{arch}"
 arch:
@@ -20,5 +20,9 @@ ports_description:
   8000/tcp: "Webinterface Port (Standalone)"
 options:
   app_password: ""
+  hermes_api_url: ""
+  hermes_api_key: ""
 schema:
   app_password: "password?"
+  hermes_api_url: "str?"
+  hermes_api_key: "str?"

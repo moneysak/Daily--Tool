@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import httpx
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -7,23 +8,27 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from db.database import SessionLocal, engine, Base
+from db.database import SessionLocal, engine, Base, get_db
 from crud import task as crud
 from schemas import task as schemas
-from auth import require_auth, get_configured_password, create_session_token
+from auth import (
+    require_auth,
+    get_configured_password,
+    create_session_token,
+    verify_password,
+    revoke_session,
+    purge_expired,
+    is_open_mode,
+    client_ip,
+    is_login_rate_limited,
+    register_login_failure,
+    reset_login_failures,
+)
 
-# Tabellen erstellen
+# Tabellen erstellen (inkl. sessions)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Alltags-Manager API")
-
-# Dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # --- Auth Endpunkte ---
 class LoginRequest(BaseModel):
@@ -34,16 +39,43 @@ def auth_status(auth_info: dict = Depends(require_auth)):
     return {"authenticated": True, "type": auth_info["auth"], "user": auth_info["user"]}
 
 @app.post("/api/auth/login")
-def login(payload: LoginRequest):
-    configured_pw = get_configured_password()
-    if not configured_pw:
-        token = create_session_token()
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    # Offener Modus (kein Passwort konfiguriert): Token trotzdem ausstellen.
+    if is_open_mode():
+        purge_expired(db)
+        token = create_session_token(db)
         return {"success": True, "token": token, "message": "Kein Passwort konfiguriert (offener Modus)"}
-        
-    if payload.password == configured_pw:
-        token = create_session_token()
-        return {"success": True, "token": token}
-    raise HTTPException(status_code=401, detail="Falsches Passwort.")
+
+    # Einfaches In-Memory-Rate-Limit gegen Brute-Force (pro Client-IP).
+    ip = client_ip(request)
+    if is_login_rate_limited(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.",
+        )
+
+    if not verify_password(payload.password):
+        register_login_failure(ip)
+        raise HTTPException(status_code=401, detail="Falsches Passwort.")
+
+    reset_login_failures(ip)
+    purge_expired(db)
+    token = create_session_token(db)
+    return {"success": True, "token": token}
+
+@app.post("/api/auth/logout")
+def logout(request: Request, db: Session = Depends(get_db)):
+    """Widerruft das mitgeschickte Session-Token (idempotent)."""
+    token = ""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[len("bearer "):].strip()
+    if not token:
+        token = request.headers.get("X-Auth-Token", "")
+    if token:
+        revoke_session(db, token)
+    return {"success": True}
+
 
 # --- Tasks API ---
 @app.post("/tasks/", response_model=schemas.Task)
@@ -218,30 +250,36 @@ FRONTEND_DIR = "/app/src/frontend"
 if not os.path.exists(FRONTEND_DIR):
     FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
 
+# Erlaubtes Ingress-Pfad-Muster: beginnt mit "/", danach nur unkritische Zeichen.
+# Verhindert u.a. Ausbruch aus dem JS-String-Literal ("</script>", ";...).
+_INGRESS_PATH_RE = re.compile(r"^/[A-Za-z0-9/_\-.]*$")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index(request: Request):
     index_path = os.path.join(FRONTEND_DIR, "index.html")
     if not os.path.exists(index_path):
         raise HTTPException(status_code=404, detail="index.html nicht gefunden.")
-    
+
     with open(index_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # HA Ingress Support: Wenn X-Ingress-Path vorhanden ist, injizieren
-    ingress_path = request.headers.get("X-Ingress-Path", "").rstrip("/")
-    config_script = f"""
-    <script>
-      window.APP_CONFIG = {{
-        INGRESS_PATH: '{ingress_path}',
-        API_BASE_URL: '{ingress_path}'
-      }};
-    </script>
-    """
+    # HA Ingress Support: X-Ingress-Path nur verwenden, wenn er dem strikten
+    # Muster entspricht, sonst leerer Fallback. Einbettung via json.dumps,
+    # damit der Wert sicher als JS-String-Literal serialisiert wird.
+    raw_ingress_path = request.headers.get("X-Ingress-Path", "").rstrip("/")
+    ingress_path = raw_ingress_path if _INGRESS_PATH_RE.match(raw_ingress_path) else ""
+
+    app_config = json.dumps(
+        {"INGRESS_PATH": ingress_path, "API_BASE_URL": ingress_path}
+    )
+    config_script = f"\n    <script>\n      window.APP_CONFIG = {app_config};\n    </script>\n"
+
     if "</head>" in content:
         content = content.replace("</head>", f"{config_script}\n</head>")
     else:
         content = f"{config_script}\n{content}"
-    
+
     return HTMLResponse(content=content)
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=False), name="frontend")

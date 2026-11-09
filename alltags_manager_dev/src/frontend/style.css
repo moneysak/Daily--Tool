@@ -398,3 +398,25 @@ h1, h2, h3 {
     margin-top: 10px;
     display: none;
 }
+
+/* Logout Button */
+.logout-btn {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 1500;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}

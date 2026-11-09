@@ -92,16 +92,30 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Authentifizierung ---
+    function setLogoutVisible(visible) {
+        const btn = document.getElementById('logout-btn');
+        if (btn) btn.style.display = visible ? 'block' : 'none';
+    }
+
+    // Bei 401: Token verwerfen und Login-Maske zeigen (statt leerer Seite).
+    function handleUnauthorized() {
+        authToken = "";
+        try { sessionStorage.removeItem('alltags_manager_token'); } catch (e) {}
+        setLogoutVisible(false);
+        showAuthModal();
+        return false;
+    }
+
     async function checkAuth() {
         try {
             const response = await fetch(`${apiBaseUrl}/api/auth/status`, {
                 headers: getAuthHeaders()
             });
             if (response.status === 401) {
-                showAuthModal();
-                return false;
+                return handleUnauthorized();
             }
             hideAuthModal();
+            setLogoutVisible(!!authToken);
             return true;
         } catch (e) {
             console.error("Auth check failed:", e);
@@ -141,6 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 authToken = data.token;
                 sessionStorage.setItem('alltags_manager_token', authToken);
                 hideAuthModal();
+                setLogoutVisible(!!authToken);
                 if (errorMsg) errorMsg.style.display = 'none';
                 renderActiveTab();
             } catch (err) {
@@ -156,13 +171,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Logout: Token am Server widerrufen, lokal verwerfen, Login-Maske zeigen.
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                if (authToken) {
+                    await fetch(`${apiBaseUrl}/api/auth/logout`, {
+                        method: 'POST',
+                        headers: getAuthHeaders()
+                    });
+                }
+            } catch (err) {
+                console.error('Logout failed:', err);
+            }
+            handleUnauthorized();
+        });
+    }
+
     // ==========================================
     // 1. TASKS LOGIC
     // ==========================================
     async function loadTasks() {
         try {
             const response = await fetch(`${apiBaseUrl}/tasks/`, { headers: getAuthHeaders() });
-            if (response.status === 401) return showAuthModal();
+            if (response.status === 401) return handleUnauthorized();
             if (!response.ok) throw new Error('Tasks load failed');
             const tasks = await response.json();
             renderTasks(tasks);
@@ -180,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: getAuthHeaders(),
                 body: JSON.stringify({ title, completed: false })
             });
-            if (response.status === 401) return showAuthModal();
+            if (response.status === 401) return handleUnauthorized();
             loadTasks();
         } catch (error) {
             console.error('Error adding task:', error);
@@ -271,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadShopping() {
         try {
             const response = await fetch(`${apiBaseUrl}/api/shopping/`, { headers: getAuthHeaders() });
-            if (response.status === 401) return showAuthModal();
+            if (response.status === 401) return handleUnauthorized();
             if (!response.ok) throw new Error('Shopping load failed');
             const items = await response.json();
             renderShopping(items);
@@ -402,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadRoutines() {
         try {
             const response = await fetch(`${apiBaseUrl}/api/routines/`, { headers: getAuthHeaders() });
-            if (response.status === 401) return showAuthModal();
+            if (response.status === 401) return handleUnauthorized();
             if (!response.ok) throw new Error('Routines load failed');
             const routines = await response.json();
             renderRoutines(routines);
@@ -544,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     typingMsg.remove();
 
                     if (response.status === 401) {
-                        showAuthModal();
+                        handleUnauthorized();
                         return;
                     }
 
