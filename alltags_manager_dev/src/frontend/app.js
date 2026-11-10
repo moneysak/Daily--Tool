@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <h1 class="greeting" id="today-greeting">Willkommen</h1>
                 <p class="subtitle" id="today-date"></p>
             </div>
+            <div id="weather-slot"></div>
             <div class="progress-card glass-panel">
                 <div class="progress-head">
                     <span>Fortschritt heute</span>
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div id="today-sections" class="today-sections"></div>
             <div id="todos-slot"></div>
             <div id="shopping-card-slot"></div>
+            <div id="news-slot"></div>
         `,
         'tasks': `
             <div class="content-header">
@@ -1194,6 +1196,142 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Wetter & Gute Nachrichten ---
+    const WEATHER_CONDITION_MAP = {
+        'clear-night': { icon: '🌙', label: 'Klar' },
+        'cloudy': { icon: '☁️', label: 'Bewölkt' },
+        'exceptional': { icon: '⚠️', label: 'Warnung' },
+        'fog': { icon: '🌫️', label: 'Nebel' },
+        'hail': { icon: '🌨️', label: 'Hagel' },
+        'lightning': { icon: '⚡', label: 'Gewitter' },
+        'lightning-rainy': { icon: '⛈️', label: 'Gewitter mit Regen' },
+        'partlycloudy': { icon: '⛅', label: 'Leicht bewölkt' },
+        'pouring': { icon: '🌧️', label: 'Starker Regen' },
+        'rainy': { icon: '🌧️', label: 'Regnerisch' },
+        'snowy': { icon: '❄️', label: 'Schnee' },
+        'snowy-rainy': { icon: '🌨️', label: 'Schneeregen' },
+        'sunny': { icon: '☀️', label: 'Sonnig' },
+        'windy': { icon: '💨', label: 'Windig' },
+        'windy-variant': { icon: '🌬️', label: 'Windig' }
+    };
+
+    async function loadWeather() {
+        const slot = document.getElementById('weather-slot');
+        if (!slot) return;
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/weather/today`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) { slot.innerHTML = ''; return; }
+            const data = await response.json();
+            if (!data.available) { slot.innerHTML = ''; return; }
+            renderWeatherCard(data);
+        } catch (error) {
+            console.warn('Error loading weather:', error);
+            slot.innerHTML = '';
+        }
+    }
+
+    function renderWeatherCard(data) {
+        const slot = document.getElementById('weather-slot');
+        if (!slot) return;
+        const condKey = (data.condition || '').toLowerCase();
+        const condInfo = WEATHER_CONDITION_MAP[condKey] || { icon: '🌡️', label: data.condition || 'Wetter' };
+        
+        const tempText = data.temperature !== null && data.temperature !== undefined
+            ? `${Math.round(data.temperature)}°C`
+            : '';
+
+        let minMaxText = '';
+        if (data.forecast_today) {
+            const low = data.forecast_today.templow !== null && data.forecast_today.templow !== undefined
+                ? `${Math.round(data.forecast_today.templow)}°`
+                : null;
+            const high = data.forecast_today.temperature !== null && data.forecast_today.temperature !== undefined
+                ? `${Math.round(data.forecast_today.temperature)}°`
+                : null;
+            if (low && high) {
+                minMaxText = `${low} / ${high}`;
+            } else if (high) {
+                minMaxText = `bis ${high}`;
+            }
+        }
+
+        const details = [];
+        if (minMaxText) details.push(`<span>${minMaxText}</span>`);
+        if (data.humidity !== null && data.humidity !== undefined) {
+            details.push(`<span>💧 ${Math.round(data.humidity)}%</span>`);
+        }
+        if (data.wind_speed !== null && data.wind_speed !== undefined) {
+            details.push(`<span>💨 ${Math.round(data.wind_speed)} km/h</span>`);
+        }
+
+        slot.innerHTML = `
+            <div class="weather-card glass-panel">
+                <div class="weather-main">
+                    <span class="weather-icon" role="img" aria-label="${escapeHtml(condInfo.label)}">${condInfo.icon}</span>
+                    <div class="weather-text-group">
+                        <span class="weather-temp">${escapeHtml(tempText)}</span>
+                        <span class="weather-condition">${escapeHtml(condInfo.label)}</span>
+                    </div>
+                </div>
+                <div class="weather-details">
+                    ${details.join('<span class="weather-sep">•</span>')}
+                </div>
+            </div>`;
+    }
+
+    async function loadPositiveNews() {
+        const slot = document.getElementById('news-slot');
+        if (!slot) return;
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/news/positive`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) { slot.innerHTML = ''; return; }
+            const data = await response.json();
+            if (!data.available || !data.items || data.items.length === 0) {
+                slot.innerHTML = '';
+                return;
+            }
+            renderNewsCard(data);
+        } catch (error) {
+            console.warn('Error loading positive news:', error);
+            slot.innerHTML = '';
+        }
+    }
+
+    function renderNewsCard(data) {
+        const slot = document.getElementById('news-slot');
+        if (!slot) return;
+        const items = data.items || [];
+        if (items.length === 0) { slot.innerHTML = ''; return; }
+
+        const rows = items.map(item => {
+            const hasSafeLink = item.link && (item.link.startsWith('http://') || item.link.startsWith('https://'));
+            const content = `
+                <span class="news-item-title">${escapeHtml(item.title)}</span>
+                ${item.summary ? `<p class="news-item-summary">${escapeHtml(item.summary)}</p>` : ''}
+            `;
+            return `
+                <li class="news-item">
+                    ${hasSafeLink 
+                        ? `<a href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer" class="news-link">${content}</a>`
+                        : `<div class="news-link">${content}</div>`
+                    }
+                </li>
+            `;
+        }).join('');
+
+        slot.innerHTML = `
+            <div class="today-block news-block">
+                <h2 class="section-title">☀️ Gute Nachrichten des Tages</h2>
+                <ul class="app-list news-list">${rows}</ul>
+            </div>`;
+    }
+
     function attachTodayListeners() {
         document.querySelectorAll('.overview-task-checkbox').forEach(cb => {
             cb.addEventListener('change', (e) => {
@@ -1219,9 +1357,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (contentMap[target]) {
             mainContent.innerHTML = contentMap[target];
             if (target === 'today') {
+                loadWeather();
                 loadOverview();
                 loadAgenda();
                 loadTodos();
+                loadPositiveNews();
             } else if (target === 'tasks') {
                 loadTasks();
                 attachTaskListeners();

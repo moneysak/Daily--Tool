@@ -32,6 +32,8 @@ APP_MODULES = [
     "crud.task",
     "crud.overview",
     "crud.ha",
+    "crud.news",
+    "crud.weather",
     "models",
     "models.task",
     "models.session",
@@ -39,6 +41,8 @@ APP_MODULES = [
     "schemas.task",
     "schemas.overview",
     "schemas.ha",
+    "schemas.news",
+    "schemas.weather",
 ]
 
 

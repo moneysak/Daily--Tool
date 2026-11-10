@@ -1,6 +1,6 @@
 name: "Alltags-Manager (Dev)"
 description: "Alltags-Organisations-App (Entwicklungs-/Beta-Version)"
-version: "1.0.7-dev"
+version: "1.0.8-dev"
 slug: "alltags_manager_dev"
 image: "ghcr.io/moneysak/alltags-manager-dev-{arch}"
 arch:
@@ -25,6 +25,7 @@ options:
   todo_entities: []
   today_todo_entities: []
   shopping_todo_entities: []
+  weather_entity: ""
 schema:
   app_password: "password?"
   user_name: "str?"
@@ -38,3 +39,4 @@ schema:
     - "str?"
   shopping_todo_entities:
     - "str?"
+  weather_entity: "str?"

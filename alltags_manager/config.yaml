@@ -25,6 +25,7 @@ options:
   todo_entities: []
   today_todo_entities: []
   shopping_todo_entities: []
+  weather_entity: ""
 schema:
   app_password: "password?"
   user_name: "str?"
@@ -38,3 +39,4 @@ schema:
     - "str?"
   shopping_todo_entities:
     - "str?"
+  weather_entity: "str?"

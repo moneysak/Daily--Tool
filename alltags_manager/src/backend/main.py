@@ -14,9 +14,13 @@ from db.database import SessionLocal, engine, Base, get_db, ensure_schema
 from crud import task as crud
 from crud import overview as crud_overview
 from crud import ha as crud_ha
+from crud import news as crud_news
+from crud import weather as crud_weather
 from schemas import task as schemas
 from schemas import overview as overview_schemas
 from schemas import ha as ha_schemas
+from schemas import news as news_schemas
+from schemas import weather as weather_schemas
 from auth import (
     require_auth,
     get_configured_password,
@@ -318,6 +322,20 @@ async def delete_ha_todo_items(
     except crud_ha.HARejected as exc:
         raise HTTPException(status_code=502, detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}")
     return {"status": "success"}
+
+
+# --- News & Weather Endpunkte ---
+
+@app.get("/api/news/positive", response_model=news_schemas.NewsResponse)
+async def get_positive_news(auth: dict = Depends(require_auth)):
+    """Liefert die neuesten positiven Nachrichten (GoodNews RSS Feed)."""
+    return await crud_news.fetch_positive_news()
+
+
+@app.get("/api/weather/today", response_model=weather_schemas.WeatherResponse)
+async def get_weather_today(auth: dict = Depends(require_auth)):
+    """Liefert das heutige Wetter und die Vorhersage aus Home Assistant."""
+    return await crud_weather.fetch_weather_today()
 
 
 
