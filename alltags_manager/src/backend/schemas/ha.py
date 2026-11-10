@@ -29,6 +29,7 @@ class TodoItem(BaseModel):
     summary: str
     status: str
     due: Optional[str] = None
+    description: Optional[str] = None
 
 
 class TodoList(BaseModel):
@@ -46,3 +47,31 @@ class TodoToggle(BaseModel):
     entity_id: str = Field(pattern=TODO_ENTITY_PATTERN)
     uid: str
     completed: bool
+
+
+class TodoListSummary(BaseModel):
+    entity_id: str
+    name: str
+
+
+class TodoItemCreate(BaseModel):
+    entity_id: str = Field(pattern=TODO_ENTITY_PATTERN)
+    summary: str
+    description: Optional[str] = None
+
+
+class TodoItemUpdate(BaseModel):
+    entity_id: str = Field(pattern=TODO_ENTITY_PATTERN)
+    completed: Optional[bool] = None
+    summary: Optional[str] = None
+
+
+class TodoItemDelete(BaseModel):
+    entity_id: str = Field(pattern=TODO_ENTITY_PATTERN)
+    uids: List[str]
+
+
+class TodoListResponse(BaseModel):
+    entity_id: str
+    name: str
+    items: List[TodoItem] = Field(default_factory=list)

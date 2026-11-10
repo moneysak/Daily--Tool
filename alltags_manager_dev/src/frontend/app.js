@@ -75,6 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button id="add-shop-btn" class="app-btn-accent">Hinzufügen</button>
             </div>
             <div class="list-controls">
+                <select id="shopping-list-select" class="shopping-list-select" title="Liste auswählen">
+                    <option value="local">Lokale Liste (App)</option>
+                </select>
                 <button id="clear-checked-shop-btn" class="app-btn-secondary">Erledigte entfernen</button>
             </div>
             <div class="list-wrapper">
@@ -334,71 +337,243 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // 2. SHOPPING LIST LOGIC
     // ==========================================
-    async function loadShopping() {
+    const SHOPPING_LIST_STORAGE_KEY = 'alltags_selected_shopping_list';
+
+    function getSelectedShoppingList() {
         try {
-            const response = await fetch(`${apiBaseUrl}/api/shopping/`, { headers: getAuthHeaders() });
-            if (response.status === 401) return handleUnauthorized();
-            if (!response.ok) throw new Error('Shopping load failed');
-            const items = await response.json();
-            renderShopping(items);
-        } catch (error) {
-            console.error('Error loading shopping items:', error);
-            const list = document.getElementById('shopping-list');
-            if (list) list.innerHTML = '<li class="list-msg">Konnte Einkaufsliste nicht laden.</li>';
+            return localStorage.getItem(SHOPPING_LIST_STORAGE_KEY) || 'local';
+        } catch (e) {
+            return 'local';
+        }
+    }
+
+    function setSelectedShoppingList(val) {
+        try {
+            localStorage.setItem(SHOPPING_LIST_STORAGE_KEY, val);
+        } catch (e) {}
+    }
+
+    async function updateShoppingListsDropdown() {
+        const select = document.getElementById('shopping-list-select');
+        if (!select) return;
+        const currentSelected = getSelectedShoppingList();
+
+        try {
+            const res = await fetch(`${apiBaseUrl}/api/ha/todos/lists`, { headers: getAuthHeaders() });
+            if (res.status === 401) return handleUnauthorized();
+            if (res.ok) {
+                const lists = await res.json();
+                let html = '<option value="local">Lokale Liste (App)</option>';
+                lists.forEach(l => {
+                    html += `<option value="${escapeHtml(l.entity_id)}">${escapeHtml(l.name)}</option>`;
+                });
+                select.innerHTML = html;
+            }
+        } catch (e) {
+            console.warn('Could not load HA todo lists for dropdown:', e);
+        }
+
+        // Stelle sicher, dass der gespeicherte Wert aktiv ist, falls vorhanden, sonst Fallback auf local
+        const options = Array.from(select.options).map(o => o.value);
+        if (options.includes(currentSelected)) {
+            select.value = currentSelected;
+        } else {
+            select.value = 'local';
+            setSelectedShoppingList('local');
+        }
+    }
+
+    async function loadShopping() {
+        const selectedList = getSelectedShoppingList();
+        if (selectedList === 'local') {
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/shopping/`, { headers: getAuthHeaders() });
+                if (response.status === 401) return handleUnauthorized();
+                if (!response.ok) throw new Error('Shopping load failed');
+                const items = await response.json();
+                renderShopping(items, false);
+            } catch (error) {
+                console.error('Error loading shopping items:', error);
+                const list = document.getElementById('shopping-list');
+                if (list) list.innerHTML = '<li class="list-msg">Konnte Einkaufsliste nicht laden.</li>';
+            }
+        } else {
+            // HA To-do-Liste laden
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/ha/todos/lists/${encodeURIComponent(selectedList)}`, {
+                    headers: getAuthHeaders()
+                });
+                if (response.status === 401) return handleUnauthorized();
+                if (response.status === 503 || response.status === 502) {
+                    const errData = await response.json().catch(() => ({}));
+                    const list = document.getElementById('shopping-list');
+                    if (list) list.innerHTML = `<li class="list-msg">Home Assistant nicht erreichbar (${escapeHtml(errData.detail || 'Fehler')}).</li>`;
+                    return;
+                }
+                if (!response.ok) throw new Error('HA list load failed');
+                const data = await response.json();
+                renderShopping(data.items || [], true);
+            } catch (error) {
+                console.error('Error loading HA shopping items:', error);
+                const list = document.getElementById('shopping-list');
+                if (list) list.innerHTML = '<li class="list-msg">Konnte Home Assistant Einkaufsliste nicht laden.</li>';
+            }
         }
     }
 
     async function addShoppingItem(name, quantity) {
-        try {
-            await fetch(`${apiBaseUrl}/api/shopping/`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ name, quantity: quantity || "1", checked: false })
-            });
-            loadShopping();
-        } catch (error) {
-            console.error('Error adding shopping item:', error);
+        const selectedList = getSelectedShoppingList();
+        if (selectedList === 'local') {
+            try {
+                await fetch(`${apiBaseUrl}/api/shopping/`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ name, quantity: quantity || "1", checked: false })
+                });
+                loadShopping();
+            } catch (error) {
+                console.error('Error adding shopping item:', error);
+            }
+        } else {
+            try {
+                const payload = {
+                    entity_id: selectedList,
+                    summary: name,
+                    description: (quantity && quantity !== "1") ? quantity : null
+                };
+                const res = await fetch(`${apiBaseUrl}/api/ha/todos/items`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+                if (res.status === 401) return handleUnauthorized();
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(`Fehler beim Hinzufügen: ${err.detail || res.statusText}`);
+                }
+                loadShopping();
+            } catch (error) {
+                console.error('Error adding HA todo item:', error);
+            }
         }
     }
 
     async function toggleShoppingItem(id, currentStatus) {
-        try {
-            await fetch(`${apiBaseUrl}/api/shopping/${id}`, {
-                method: 'PUT',
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ checked: !currentStatus })
-            });
-            loadShopping();
-        } catch (error) {
-            console.error('Error updating item:', error);
+        const selectedList = getSelectedShoppingList();
+        if (selectedList === 'local') {
+            try {
+                await fetch(`${apiBaseUrl}/api/shopping/${id}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ checked: !currentStatus })
+                });
+                loadShopping();
+            } catch (error) {
+                console.error('Error updating item:', error);
+            }
+        } else {
+            try {
+                const res = await fetch(`${apiBaseUrl}/api/ha/todos/items/${encodeURIComponent(id)}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        entity_id: selectedList,
+                        completed: !currentStatus
+                    })
+                });
+                if (res.status === 401) return handleUnauthorized();
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(`Fehler beim Aktualisieren: ${err.detail || res.statusText}`);
+                }
+                loadShopping();
+            } catch (error) {
+                console.error('Error updating HA todo item:', error);
+            }
         }
     }
 
     async function deleteShoppingItem(id) {
-        try {
-            await fetch(`${apiBaseUrl}/api/shopping/${id}`, {
-                method: 'DELETE',
-                headers: getAuthHeaders()
-            });
-            loadShopping();
-        } catch (error) {
-            console.error('Error deleting item:', error);
+        const selectedList = getSelectedShoppingList();
+        if (selectedList === 'local') {
+            try {
+                await fetch(`${apiBaseUrl}/api/shopping/${id}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                loadShopping();
+            } catch (error) {
+                console.error('Error deleting item:', error);
+            }
+        } else {
+            try {
+                const res = await fetch(`${apiBaseUrl}/api/ha/todos/items/delete`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        entity_id: selectedList,
+                        uids: [String(id)]
+                    })
+                });
+                if (res.status === 401) return handleUnauthorized();
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(`Fehler beim Löschen: ${err.detail || res.statusText}`);
+                }
+                loadShopping();
+            } catch (error) {
+                console.error('Error deleting HA todo item:', error);
+            }
         }
     }
 
     async function clearCheckedShopping() {
-        try {
-            await fetch(`${apiBaseUrl}/api/shopping/clear-checked`, {
-                method: 'POST',
-                headers: getAuthHeaders()
-            });
-            loadShopping();
-        } catch (error) {
-            console.error('Error clearing checked:', error);
+        const selectedList = getSelectedShoppingList();
+        if (selectedList === 'local') {
+            try {
+                await fetch(`${apiBaseUrl}/api/shopping/clear-checked`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                loadShopping();
+            } catch (error) {
+                console.error('Error clearing checked:', error);
+            }
+        } else {
+            // Finde alle erledigten Items in der aktuellen HA-Liste und lösche sie
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/ha/todos/lists/${encodeURIComponent(selectedList)}`, {
+                    headers: getAuthHeaders()
+                });
+                if (response.status === 401) return handleUnauthorized();
+                if (response.ok) {
+                    const data = await response.json();
+                    const completedUids = (data.items || [])
+                        .filter(it => it.status === 'completed')
+                        .map(it => it.uid);
+                    if (completedUids.length > 0) {
+                        const delRes = await fetch(`${apiBaseUrl}/api/ha/todos/items/delete`, {
+                            method: 'POST',
+                            headers: getAuthHeaders(),
+                            body: JSON.stringify({
+                                entity_id: selectedList,
+                                uids: completedUids
+                            })
+                        });
+                        if (!delRes.ok) {
+                            alert('Konnte erledigte Einträge in Home Assistant nicht löschen.');
+                        }
+                    }
+                }
+                loadShopping();
+            } catch (error) {
+                console.error('Error clearing checked HA items:', error);
+                alert('Konnte erledigte Einträge nicht entfernen.');
+            }
         }
     }
 
-    function renderShopping(items) {
+    function renderShopping(items, isHaList) {
         const list = document.getElementById('shopping-list');
         if (!list) return;
         list.innerHTML = '';
@@ -407,15 +582,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         items.forEach(item => {
+            const isCompleted = isHaList ? (item.status === 'completed') : !!item.checked;
+            const itemId = isHaList ? item.uid : item.id;
+            const itemName = isHaList ? item.summary : item.name;
+            const itemBadge = isHaList ? item.description : item.quantity;
+
             const li = document.createElement('li');
-            li.className = `list-item ${item.checked ? 'is-completed' : ''}`;
+            li.className = `list-item ${isCompleted ? 'is-completed' : ''}`;
             li.innerHTML = `
                 <label class="item-left">
-                    <input type="checkbox" class="shop-checkbox" data-id="${item.id}" ${item.checked ? 'checked' : ''}>
-                    <span class="item-text">${escapeHtml(item.name)}</span>
-                    ${item.quantity ? `<span class="item-badge">${escapeHtml(item.quantity)}</span>` : ''}
+                    <input type="checkbox" class="shop-checkbox" data-id="${escapeHtml(String(itemId))}" ${isCompleted ? 'checked' : ''}>
+                    <span class="item-text">${escapeHtml(itemName)}</span>
+                    ${itemBadge ? `<span class="item-badge">${escapeHtml(itemBadge)}</span>` : ''}
                 </label>
-                <button class="delete-btn" data-id="${item.id}" title="Löschen">✕</button>
+                <button class="delete-btn" data-id="${escapeHtml(String(itemId))}" title="Löschen">✕</button>
             `;
             list.appendChild(li);
         });
@@ -441,6 +621,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const nameInput = document.getElementById('new-shop-item');
         const qtyInput = document.getElementById('new-shop-qty');
         const clearBtn = document.getElementById('clear-checked-shop-btn');
+        const select = document.getElementById('shopping-list-select');
+
+        if (select) {
+            select.addEventListener('change', (e) => {
+                setSelectedShoppingList(e.target.value);
+                loadShopping();
+            });
+        }
 
         if (addBtn && nameInput) {
             const handleAdd = () => {
@@ -1038,7 +1226,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadTasks();
                 attachTaskListeners();
             } else if (target === 'shopping') {
-                loadShopping();
+                updateShoppingListsDropdown().finally(() => {
+                    loadShopping();
+                });
                 attachShoppingListeners();
             } else if (target === 'routines') {
                 loadRoutines();

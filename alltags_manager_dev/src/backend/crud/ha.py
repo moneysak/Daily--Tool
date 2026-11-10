@@ -308,6 +308,7 @@ async def _fetch_todo_list(client: httpx.AsyncClient, entity_id: str) -> dict:
             "summary": raw.get("summary") or "(ohne Titel)",
             "status": "needs_action",
             "due": raw.get("due"),
+            "description": raw.get("description"),
         })
     return {"entity_id": entity_id, "name": name, "items": items}
 
@@ -348,21 +349,138 @@ async def set_todo_status(entity_id: str, uid: str, completed: bool) -> None:
     """Setzt den Status eines To-do-Items via Service-Call (Rückschreiben)."""
     if not get_ha_token():
         raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
+    await update_todo_item(entity_id, uid, completed=completed)
 
-    status = "completed" if completed else "needs_action"
+
+async def fetch_todo_lists_summary() -> List[dict]:
+    """Liefert Übersicht aller konfigurierten To-do-Listen (entity_id und Name)."""
+    if not get_ha_token():
+        raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
+    entities = get_configured_entities("todo")
+    if not entities:
+        return []
+
     client = make_client()
     async with client:
+        results = await asyncio.gather(
+            *[_entity_name(client, ent) for ent in entities],
+            return_exceptions=True,
+        )
+
+    lists: List[dict] = []
+    for entity_id, res in zip(entities, results):
+        if isinstance(res, Exception):
+            logger.warning("Konnte Name für %s nicht laden: %s", entity_id, res)
+            continue
+        lists.append({"entity_id": entity_id, "name": res})
+    return lists
+
+
+async def fetch_single_todo_list(entity_id: str) -> dict:
+    """Lädt alle Items (needs_action und completed) einer einzelnen To-do-Liste."""
+    if not get_ha_token():
+        raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
+    client = make_client()
+    async with client:
+        name = await _entity_name(client, entity_id)
         try:
             response = await client.post(
-                "/services/todo/update_item",
-                json={"entity_id": entity_id, "item": uid, "status": status},
+                "/services/todo/get_items",
+                params={"return_response": "1"},
+                json={"entity_id": entity_id, "status": ["needs_action", "completed"]},
             )
         except httpx.HTTPError as exc:
-            # Netzfehler/Timeout -> HA gilt als nicht verfügbar (Route: 503).
-            raise HAUnavailable(
-                f"Netzfehler für {entity_id} ({type(exc).__name__})"
-            ) from exc
+            raise HAUnavailable(f"Netzfehler für {entity_id} ({type(exc).__name__})") from exc
+
+    if response.status_code == 401:
+        raise HAUnavailable(f"401 für {entity_id}")
+    if response.status_code != 200:
+        raise HARejected(f"HTTP {response.status_code} für {entity_id}")
+
+    payload = response.json() or {}
+    service_response = payload.get("service_response") or {}
+    list_data = service_response.get(entity_id) or {}
+    items: List[dict] = []
+    for raw in list_data.get("items") or []:
+        if not isinstance(raw, dict):
+            continue
+        status = raw.get("status") or "needs_action"
+        items.append({
+            "uid": str(raw.get("uid") or ""),
+            "summary": raw.get("summary") or "(ohne Titel)",
+            "status": status,
+            "due": raw.get("due"),
+            "description": raw.get("description"),
+        })
+    return {"entity_id": entity_id, "name": name, "items": items}
+
+
+async def add_todo_item(entity_id: str, summary: str, description: Optional[str] = None) -> None:
+    """Fügt ein Item zu einer HA To-do-Liste hinzu."""
+    if not get_ha_token():
+        raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
+    client = make_client()
+    payload = {"entity_id": entity_id, "item": summary}
+    if description:
+        payload["description"] = description
+
+    async with client:
+        try:
+            response = await client.post("/services/todo/add_item", json=payload)
+        except httpx.HTTPError as exc:
+            raise HAUnavailable(f"Netzfehler für {entity_id} ({type(exc).__name__})") from exc
+
     if response.status_code == 401:
         raise HAUnavailable(f"401 für {entity_id}")
     if response.status_code >= 400:
         raise HARejected(f"HTTP {response.status_code} für {entity_id}")
+
+
+async def update_todo_item(
+    entity_id: str,
+    uid: str,
+    completed: Optional[bool] = None,
+    summary: Optional[str] = None,
+) -> None:
+    """Aktualisiert Status und/oder Titel eines To-do-Items."""
+    if not get_ha_token():
+        raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
+    client = make_client()
+    payload: dict = {"entity_id": entity_id, "item": uid}
+    if completed is not None:
+        payload["status"] = "completed" if completed else "needs_action"
+    if summary is not None:
+        payload["rename"] = summary
+
+    async with client:
+        try:
+            response = await client.post("/services/todo/update_item", json=payload)
+        except httpx.HTTPError as exc:
+            raise HAUnavailable(f"Netzfehler für {entity_id} ({type(exc).__name__})") from exc
+
+    if response.status_code == 401:
+        raise HAUnavailable(f"401 für {entity_id}")
+    if response.status_code >= 400:
+        raise HARejected(f"HTTP {response.status_code} für {entity_id}")
+
+
+async def remove_todo_items(entity_id: str, uids: List[str]) -> None:
+    """Entfernt ein oder mehrere Items aus einer HA To-do-Liste."""
+    if not uids:
+        return
+    if not get_ha_token():
+        raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
+    client = make_client()
+    payload = {"entity_id": entity_id, "item": uids}
+
+    async with client:
+        try:
+            response = await client.post("/services/todo/remove_item", json=payload)
+        except httpx.HTTPError as exc:
+            raise HAUnavailable(f"Netzfehler für {entity_id} ({type(exc).__name__})") from exc
+
+    if response.status_code == 401:
+        raise HAUnavailable(f"401 für {entity_id}")
+    if response.status_code >= 400:
+        raise HARejected(f"HTTP {response.status_code} für {entity_id}")
+

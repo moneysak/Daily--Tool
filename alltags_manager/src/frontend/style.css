@@ -135,7 +135,30 @@ h1, h2, h3 {
 .list-controls {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
     margin-bottom: 12px;
+}
+
+.shopping-list-select {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.shopping-list-select:focus {
+    border-color: var(--accent-primary);
+}
+
+.shopping-list-select option {
+    background: #1e222d;
+    color: var(--text-primary);
 }
 
 /* Lists & Items */

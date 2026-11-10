@@ -56,7 +56,6 @@ class HAMock:
         if path.endswith("/services/todo/get_items"):
             body = json.loads(request.content or b"{}")
             assert "return_response" in request.url.params
-            assert body.get("status") == ["needs_action"]
             entity = body.get("entity_id")
             value = self.todo_items.get(entity, [])
             if isinstance(value, Exception):
@@ -64,6 +63,24 @@ class HAMock:
             payload = {"changed_states": [],
                        "service_response": {entity: {"items": value}}}
             return httpx.Response(200, json=payload)
+
+        if path.endswith("/services/todo/add_item"):
+            body = json.loads(request.content or b"{}")
+            self.update_calls.append(body)
+            if self.update_error is not None:
+                raise self.update_error
+            if self.update_status >= 400:
+                return httpx.Response(self.update_status, json={"message": "rejected"})
+            return httpx.Response(200, json=[])
+
+        if path.endswith("/services/todo/remove_item"):
+            body = json.loads(request.content or b"{}")
+            self.update_calls.append(body)
+            if self.update_error is not None:
+                raise self.update_error
+            if self.update_status >= 400:
+                return httpx.Response(self.update_status, json={"message": "rejected"})
+            return httpx.Response(200, json=[])
 
         if path.endswith("/services/todo/update_item"):
             body = json.loads(request.content or b"{}")
@@ -399,3 +416,124 @@ def test_make_client_headers_and_base_url(client, monkeypatch):
         assert str(client_obj.base_url).rstrip("/") == "http://supervisor/core/api"
     finally:
         asyncio.run(client_obj.aclose())
+
+
+# --- Multi-List Integration Tests ---
+
+def test_ha_multi_list_endpoints(client, ha_env, ha_mock):
+    """Testet die neuen Endpunkte für To-Do-Listen-Switching und CRUD."""
+    ha_env(todos="todo.einkaufsliste,todo.dm")
+    ha_mock.states["todo.einkaufsliste"] = "Supermarkt"
+    ha_mock.states["todo.dm"] = "Drogerie"
+    ha_mock.todo_items["todo.einkaufsliste"] = [
+        {"uid": "item-1", "summary": "Milch", "status": "needs_action", "description": "2x"},
+        {"uid": "item-2", "summary": "Brot", "status": "completed"}
+    ]
+
+    # 1. GET /api/ha/todos/lists
+    res = client.get("/api/ha/todos/lists")
+    assert res.status_code == 200
+    lists = res.json()
+    assert len(lists) == 2
+    assert lists[0] == {"entity_id": "todo.einkaufsliste", "name": "Supermarkt"}
+    assert lists[1] == {"entity_id": "todo.dm", "name": "Drogerie"}
+
+    # 2. GET /api/ha/todos/lists/{entity_id}
+    res = client.get("/api/ha/todos/lists/todo.einkaufsliste")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["entity_id"] == "todo.einkaufsliste"
+    assert data["name"] == "Supermarkt"
+    assert len(data["items"]) == 2
+    assert data["items"][0] == {
+        "uid": "item-1",
+        "summary": "Milch",
+        "status": "needs_action",
+        "due": None,
+        "description": "2x"
+    }
+
+    # Unberechtigte entity_id -> 403
+    assert client.get("/api/ha/todos/lists/todo.forbidden").status_code == 403
+
+    # 3. POST /api/ha/todos/items
+    add_res = client.post("/api/ha/todos/items", json={
+        "entity_id": "todo.einkaufsliste",
+        "summary": "Haferflocken",
+        "description": "1 Paket"
+    })
+    assert add_res.status_code == 200
+    assert ha_mock.update_calls[-1] == {
+        "entity_id": "todo.einkaufsliste",
+        "item": "Haferflocken",
+        "description": "1 Paket"
+    }
+
+    # 4. PUT /api/ha/todos/items/{uid}
+    update_res = client.put("/api/ha/todos/items/item-1", json={
+        "entity_id": "todo.einkaufsliste",
+        "completed": True,
+        "summary": "Vollmilch"
+    })
+    assert update_res.status_code == 200
+    assert ha_mock.update_calls[-1] == {
+        "entity_id": "todo.einkaufsliste",
+        "item": "item-1",
+        "status": "completed",
+        "rename": "Vollmilch"
+    }
+
+    # 5. POST /api/ha/todos/items/delete
+    del_res = client.post("/api/ha/todos/items/delete", json={
+        "entity_id": "todo.einkaufsliste",
+        "uids": ["item-1", "item-2"]
+    })
+    assert del_res.status_code == 200
+    assert ha_mock.update_calls[-1] == {
+        "entity_id": "todo.einkaufsliste",
+        "item": ["item-1", "item-2"]
+    }
+
+
+def test_ha_multi_list_auth_and_error_handling(client, ha_env, ha_mock, app_factory, addon_name):
+    """Testet Allowlist, Fehlerstatus (503/502) und Auth-Schutz der neuen Endpunkte."""
+    ha_env(todos="todo.einkaufsliste")
+
+    # Forbidden entities
+    assert client.post("/api/ha/todos/items", json={"entity_id": "todo.bad", "summary": "X"}).status_code == 403
+    assert client.put("/api/ha/todos/items/u1", json={"entity_id": "todo.bad", "completed": True}).status_code == 403
+    assert client.post("/api/ha/todos/items/delete", json={"entity_id": "todo.bad", "uids": ["u1"]}).status_code == 403
+
+    # HA nicht verfügbar -> 503
+    ha_env(token=None, todos="todo.einkaufsliste")
+    assert client.get("/api/ha/todos/lists").status_code == 503
+    assert client.get("/api/ha/todos/lists/todo.einkaufsliste").status_code == 503
+    assert client.post("/api/ha/todos/items", json={"entity_id": "todo.einkaufsliste", "summary": "X"}).status_code == 503
+    assert client.put("/api/ha/todos/items/u1", json={"entity_id": "todo.einkaufsliste", "completed": True}).status_code == 503
+    assert client.post("/api/ha/todos/items/delete", json={"entity_id": "todo.einkaufsliste", "uids": ["u1"]}).status_code == 503
+
+    # HA abgelehnt -> 502
+    ha_env(token="test-token", todos="todo.einkaufsliste")
+    ha_mock.update_status = 500
+    assert client.post("/api/ha/todos/items", json={"entity_id": "todo.einkaufsliste", "summary": "X"}).status_code == 502
+
+    # Auth erforderlich
+    app = app_factory(addon_name, password="geheim")
+    with TestClient(app) as auth_client:
+        assert auth_client.get("/api/ha/todos/lists").status_code == 401
+        assert auth_client.get("/api/ha/todos/lists/todo.einkaufsliste").status_code == 401
+        assert auth_client.post("/api/ha/todos/items", json={"entity_id": "todo.einkaufsliste", "summary": "X"}).status_code == 401
+        assert auth_client.put("/api/ha/todos/items/u1", json={"entity_id": "todo.einkaufsliste", "completed": True}).status_code == 401
+        assert auth_client.post("/api/ha/todos/items/delete", json={"entity_id": "todo.einkaufsliste", "uids": ["u1"]}).status_code == 401
+
+
+@pytest.mark.parametrize("addon", ADDONS)
+def test_frontend_shopping_multi_list_hooks_present(addon):
+    """Statische Frontend-Prüfung für Shopping-Multi-List Dropdown und Keys."""
+    path = os.path.join(REPO_ROOT, addon, "src", "frontend", "app.js")
+    with open(path, encoding="utf-8") as handle:
+        js = handle.read()
+    for token in ("shopping-list-select", "alltags_selected_shopping_list",
+                  "/api/ha/todos/lists", "updateShoppingListsDropdown"):
+        assert token in js, f"{token} fehlt in app.js"
+

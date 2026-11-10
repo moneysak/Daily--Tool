@@ -3,7 +3,7 @@ import re
 import json
 import httpx
 from datetime import date
-from typing import Optional
+from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -239,6 +239,86 @@ async def toggle_ha_todo(
             detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}",
         )
     return {"status": "success"}
+
+
+@app.get("/api/ha/todos/lists", response_model=List[ha_schemas.TodoListSummary])
+async def list_ha_todo_lists(auth: dict = Depends(require_auth)):
+    """Liefert Übersicht aller konfigurierten To-do-Listen (entity_id und Name)."""
+    try:
+        return await crud_ha.fetch_todo_lists_summary()
+    except crud_ha.HAUnavailable:
+        raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
+    except crud_ha.HARejected as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}",
+        )
+
+
+@app.get("/api/ha/todos/lists/{entity_id}", response_model=ha_schemas.TodoListResponse)
+async def get_ha_todo_list(entity_id: str, auth: dict = Depends(require_auth)):
+    """Liefert alle Items einer bestimmten freigegebenen To-do-Liste."""
+    if entity_id not in crud_ha.get_configured_entities("todo"):
+        raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
+    try:
+        return await crud_ha.fetch_single_todo_list(entity_id)
+    except crud_ha.HAUnavailable:
+        raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
+    except crud_ha.HARejected as exc:
+        raise HTTPException(status_code=502, detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}")
+
+
+@app.post("/api/ha/todos/items")
+async def create_ha_todo_item(
+    payload: ha_schemas.TodoItemCreate,
+    auth: dict = Depends(require_auth),
+):
+    """Erstellt ein neues Item auf der angegebenen HA To-do-Liste."""
+    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+        raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
+    try:
+        await crud_ha.add_todo_item(payload.entity_id, payload.summary, payload.description)
+    except crud_ha.HAUnavailable:
+        raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
+    except crud_ha.HARejected as exc:
+        raise HTTPException(status_code=502, detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}")
+    return {"status": "success"}
+
+
+@app.put("/api/ha/todos/items/{uid}")
+async def update_ha_todo_item(
+    uid: str,
+    payload: ha_schemas.TodoItemUpdate,
+    auth: dict = Depends(require_auth),
+):
+    """Aktualisiert Status oder Titel eines Items auf der angegebenen HA To-do-Liste."""
+    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+        raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
+    try:
+        await crud_ha.update_todo_item(payload.entity_id, uid, payload.completed, payload.summary)
+    except crud_ha.HAUnavailable:
+        raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
+    except crud_ha.HARejected as exc:
+        raise HTTPException(status_code=502, detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}")
+    return {"status": "success"}
+
+
+@app.post("/api/ha/todos/items/delete")
+async def delete_ha_todo_items(
+    payload: ha_schemas.TodoItemDelete,
+    auth: dict = Depends(require_auth),
+):
+    """Löscht ein oder mehrere Items von der angegebenen HA To-do-Liste."""
+    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+        raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
+    try:
+        await crud_ha.remove_todo_items(payload.entity_id, payload.uids)
+    except crud_ha.HAUnavailable:
+        raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
+    except crud_ha.HARejected as exc:
+        raise HTTPException(status_code=502, detail=f"Home Assistant hat die Anfrage abgelehnt: {exc}")
+    return {"status": "success"}
+
 
 
 # --- Hermes Chat API Proxy ---
