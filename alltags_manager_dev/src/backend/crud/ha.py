@@ -30,8 +30,8 @@ DEFAULT_OPTIONS_PATH = "/data/options.json"
 # 5 s Timeout pro Request (parallel über alle Entities).
 HA_TIMEOUT = 5.0
 
-_CALENDAR_RE = re.compile(r"^calendar\.[a-z0-9_]+$")
-_TODO_RE = re.compile(r"^todo\.[a-z0-9_]+$")
+_CALENDAR_RE = re.compile(r"^calendar\.[a-zA-Z0-9_\-\.]+$")
+_TODO_RE = re.compile(r"^todo\.[a-zA-Z0-9_\-\.]+$")
 
 _KIND_CONFIG = {
     "calendar": {
