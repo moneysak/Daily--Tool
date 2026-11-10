@@ -36,7 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <h1 class="greeting" id="today-greeting">Willkommen</h1>
                 <p class="subtitle" id="today-date"></p>
             </div>
+            <div id="briefing-slot"></div>
             <div id="weather-slot"></div>
+            <div id="home-status-slot"></div>
             <div class="progress-card glass-panel">
                 <div class="progress-head">
                     <span>Fortschritt heute</span>
@@ -1348,6 +1350,145 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // Daily Briefing & Home Status
+    // ==========================================
+    async function loadBriefing() {
+        const slot = document.getElementById('briefing-slot');
+        if (!slot) return;
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/briefing`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) { slot.innerHTML = ''; return; }
+            const data = await response.json();
+            if (!data.available) { slot.innerHTML = ''; return; }
+            renderBriefing(data);
+        } catch (error) {
+            console.warn('Error loading briefing:', error);
+            slot.innerHTML = '';
+        }
+    }
+
+    function renderBriefing(data) {
+        const slot = document.getElementById('briefing-slot');
+        if (!slot) return;
+
+        const highlightsHtml = (data.highlights && data.highlights.length > 0)
+            ? `<div class="briefing-highlights">
+                 ${data.highlights.map(h => `<span class="briefing-chip">${escapeHtml(h)}</span>`).join('')}
+               </div>`
+            : '';
+
+        slot.innerHTML = `
+            <div class="briefing-card glass-panel">
+                <div class="briefing-header">
+                    <span class="briefing-sparkle">✨</span>
+                    <span class="briefing-title">Tagesbriefing</span>
+                </div>
+                <div class="briefing-summary">${escapeHtml(data.summary)}</div>
+                ${highlightsHtml}
+            </div>
+        `;
+    }
+
+    async function loadHomeStatus() {
+        const slot = document.getElementById('home-status-slot');
+        if (!slot) return;
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/ha/status`, {
+                headers: getAuthHeaders()
+            });
+            if (response.status === 401) return handleUnauthorized();
+            if (!response.ok) { slot.innerHTML = ''; return; }
+            const data = await response.json();
+            if (!data.available) { slot.innerHTML = ''; return; }
+            renderHomeStatus(data);
+        } catch (error) {
+            console.warn('Error loading home status:', error);
+            slot.innerHTML = '';
+        }
+    }
+
+    function renderHomeStatus(data) {
+        const slot = document.getElementById('home-status-slot');
+        if (!slot) return;
+
+        const chips = [];
+
+        // 1. Haustür
+        if (data.door) {
+            if (data.door.open === true) {
+                chips.push({ icon: '🚪', text: 'Haustür offen', status: 'warning' });
+            } else if (data.door.locked === true) {
+                chips.push({ icon: '🚪', text: 'Haustür verriegelt', status: 'ok' });
+            } else if (data.door.locked === false) {
+                chips.push({ icon: '🚪', text: 'Haustür entriegelt', status: 'warning' });
+            } else if (data.door.open === false) {
+                chips.push({ icon: '🚪', text: 'Haustür zu', status: 'ok' });
+            }
+        }
+
+        // 2. Fenster
+        if (data.windows) {
+            if (data.windows.open_count > 0) {
+                const count = data.windows.open_count;
+                const label = count === 1 ? '1 Fenster offen' : `${count} Fenster offen`;
+                chips.push({ icon: '🪟', text: label, status: 'warning' });
+            } else {
+                chips.push({ icon: '🪟', text: 'Alle Fenster zu', status: 'ok' });
+            }
+        }
+
+        // 3. Lichter
+        if (data.lights) {
+            if (data.lights.on_count > 0) {
+                const count = data.lights.on_count;
+                const label = count === 1 ? '1 Licht an' : `${count} Lichter an`;
+                chips.push({ icon: '💡', text: label, status: 'info' });
+            } else {
+                chips.push({ icon: '💡', text: 'Alle Lichter aus', status: 'ok' });
+            }
+        }
+
+        // 4. Heizung / Klima
+        if (data.climate && data.climate.current_temperature !== null) {
+            chips.push({
+                icon: '🌡️',
+                text: `Ø ${data.climate.current_temperature.toFixed(1)}°C`,
+                status: 'info'
+            });
+        }
+
+        // 5. Waschmaschine
+        if (data.appliances && data.appliances.washing_machine_running !== null) {
+            if (data.appliances.washing_machine_running) {
+                chips.push({ icon: '🧺', text: 'Waschmaschine läuft', status: 'active' });
+            } else {
+                chips.push({ icon: '🧺', text: 'Waschmaschine fertig', status: 'ok' });
+            }
+        }
+
+        if (chips.length === 0) {
+            slot.innerHTML = '';
+            return;
+        }
+
+        slot.innerHTML = `
+            <div class="home-status-card glass-panel">
+                <div class="home-status-chips">
+                    ${chips.map(c => `
+                        <div class="home-status-chip chip-${c.status}">
+                            <span class="chip-icon">${c.icon}</span>
+                            <span class="chip-text">${escapeHtml(c.text)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // ==========================================
     // Tab Navigation & Rendering
     // ==========================================
     function renderActiveTab() {
@@ -1357,7 +1498,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (contentMap[target]) {
             mainContent.innerHTML = contentMap[target];
             if (target === 'today') {
+                loadBriefing();
                 loadWeather();
+                loadHomeStatus();
                 loadOverview();
                 loadAgenda();
                 loadTodos();

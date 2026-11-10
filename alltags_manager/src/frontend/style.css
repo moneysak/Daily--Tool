@@ -764,3 +764,113 @@ h1, h2, h3 {
     line-height: 1.4;
 }
 
+/* ==========================================
+   Daily Briefing & Home Status
+   ========================================== */
+.briefing-card {
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, rgba(203, 169, 112, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
+    border: 1px solid rgba(203, 169, 112, 0.25);
+}
+
+.briefing-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.briefing-sparkle {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.briefing-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+}
+
+.briefing-summary {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+
+.briefing-highlights {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.briefing-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+}
+
+.home-status-card {
+    padding: 12px 14px;
+    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.home-status-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.home-status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.home-status-chip .chip-icon {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.home-status-chip.chip-ok {
+    background: rgba(46, 204, 113, 0.12);
+    border-color: rgba(46, 204, 113, 0.3);
+    color: #a8f0c6;
+}
+
+.home-status-chip.chip-warning {
+    background: rgba(231, 76, 60, 0.14);
+    border-color: rgba(231, 76, 60, 0.35);
+    color: #fca5a5;
+}
+
+.home-status-chip.chip-info {
+    background: rgba(52, 152, 219, 0.12);
+    border-color: rgba(52, 152, 219, 0.3);
+    color: #bae6fd;
+}
+
+.home-status-chip.chip-active {
+    background: rgba(241, 196, 15, 0.14);
+    border-color: rgba(241, 196, 15, 0.35);
+    color: #fef08a;
+}
+

@@ -34,6 +34,8 @@ APP_MODULES = [
     "crud.ha",
     "crud.news",
     "crud.weather",
+    "crud.home_status",
+    "crud.briefing",
     "models",
     "models.task",
     "models.session",
@@ -43,6 +45,8 @@ APP_MODULES = [
     "schemas.ha",
     "schemas.news",
     "schemas.weather",
+    "schemas.home_status",
+    "schemas.briefing",
 ]
 
 

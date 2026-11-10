@@ -26,6 +26,11 @@ options:
   today_todo_entities: []
   shopping_todo_entities: []
   weather_entity: ""
+  enable_home_status: true
+  enable_daily_briefing: true
+  lock_entity: "lock.nuki"
+  door_sensor_entity: "binary_sensor.nuki_door_sensor"
+  washing_machine_entity: "binary_sensor.washing_machine_running"
 schema:
   app_password: "password?"
   user_name: "str?"
@@ -40,3 +45,8 @@ schema:
   shopping_todo_entities:
     - "str?"
   weather_entity: "str?"
+  enable_home_status: "bool?"
+  enable_daily_briefing: "bool?"
+  lock_entity: "str?"
+  door_sensor_entity: "str?"
+  washing_machine_entity: "str?"

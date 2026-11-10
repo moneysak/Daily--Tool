@@ -16,11 +16,15 @@ from crud import overview as crud_overview
 from crud import ha as crud_ha
 from crud import news as crud_news
 from crud import weather as crud_weather
+from crud import home_status as crud_home_status
+from crud import briefing as crud_briefing
 from schemas import task as schemas
 from schemas import overview as overview_schemas
 from schemas import ha as ha_schemas
 from schemas import news as news_schemas
 from schemas import weather as weather_schemas
+from schemas import home_status as home_status_schemas
+from schemas import briefing as briefing_schemas
 from auth import (
     require_auth,
     get_configured_password,
@@ -336,6 +340,20 @@ async def get_positive_news(auth: dict = Depends(require_auth)):
 async def get_weather_today(auth: dict = Depends(require_auth)):
     """Liefert das heutige Wetter und die Vorhersage aus Home Assistant."""
     return await crud_weather.fetch_weather_today()
+
+
+@app.get("/api/ha/status", response_model=home_status_schemas.HomeStatusResponse)
+async def get_home_status(auth: dict = Depends(require_auth)):
+    """Liefert den aktuellen Home-Status (Türen, Fenster, Lichter, Klima, Geräte)."""
+    return await crud_home_status.fetch_home_status()
+
+
+@app.get("/api/briefing", response_model=briefing_schemas.BriefingResponse)
+async def get_daily_briefing(
+    db: Session = Depends(get_db), auth: dict = Depends(require_auth)
+):
+    """Liefert das Daily Briefing für den heutigen Tag."""
+    return await crud_briefing.generate_briefing(db)
 
 
 
