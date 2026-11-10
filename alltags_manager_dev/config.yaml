@@ -1,6 +1,6 @@
 name: "Alltags-Manager (Dev)"
 description: "Alltags-Organisations-App (Entwicklungs-/Beta-Version)"
-version: "1.0.6-dev"
+version: "1.0.7-dev"
 slug: "alltags_manager_dev"
 image: "ghcr.io/moneysak/alltags-manager-dev-{arch}"
 arch:
@@ -23,6 +23,8 @@ options:
   hermes_api_key: ""
   calendar_entities: []
   todo_entities: []
+  today_todo_entities: []
+  shopping_todo_entities: []
 schema:
   app_password: "password?"
   user_name: "str?"
@@ -31,4 +33,8 @@ schema:
   calendar_entities:
     - "str?"
   todo_entities:
+    - "str?"
+  today_todo_entities:
+    - "str?"
+  shopping_todo_entities:
     - "str?"

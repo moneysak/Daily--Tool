@@ -44,6 +44,16 @@ _KIND_CONFIG = {
         "option": "todo_entities",
         "regex": _TODO_RE,
     },
+    "today_todo": {
+        "env": "ALLTAGS_TODAY_TODO_ENTITIES",
+        "option": "today_todo_entities",
+        "regex": _TODO_RE,
+    },
+    "shopping_todo": {
+        "env": "ALLTAGS_SHOPPING_TODO_ENTITIES",
+        "option": "shopping_todo_entities",
+        "regex": _TODO_RE,
+    },
 }
 
 
@@ -87,12 +97,8 @@ def get_ha_base_url() -> str:
     return url.rstrip("/")
 
 
-def get_configured_entities(kind: str) -> List[str]:
-    """Liefert die validierte, deduplizierte Allowlist eines Typs.
-
-    Reihenfolge: Env-CSV ``ALLTAGS_*_ENTITIES`` > ``options.json`` > leer.
-    Ungültige Einträge werden verworfen, die Reihenfolge bleibt erhalten.
-    """
+def _get_direct_configured_entities(kind: str) -> List[str]:
+    """Liest und validiert die Entity-Liste für einen einzelnen Key ohne Fallback."""
     cfg = _KIND_CONFIG.get(kind)
     if cfg is None:
         return []
@@ -120,6 +126,42 @@ def get_configured_entities(kind: str) -> List[str]:
         if entity_id not in result:
             result.append(entity_id)
     return result
+
+
+def get_configured_entities(kind: str) -> List[str]:
+    """Liefert die validierte, deduplizierte Allowlist eines Typs mit Fallback-Logik.
+
+    - calendar: ALLTAGS_CALENDAR_ENTITIES / calendar_entities
+    - today_todo: ALLTAGS_TODAY_TODO_ENTITIES / today_todo_entities;
+      falls nicht konfiguriert oder leer -> Fallback auf ALLTAGS_TODO_ENTITIES / todo_entities.
+    - shopping_todo: ALLTAGS_SHOPPING_TODO_ENTITIES / shopping_todo_entities;
+      falls nicht konfiguriert oder leer -> Fallback auf ALLTAGS_TODO_ENTITIES / todo_entities.
+    - todo: ALLTAGS_TODO_ENTITIES / todo_entities;
+      falls leer -> Vereinigung von today_todo und shopping_todo.
+    """
+    if kind == "today_todo":
+        entities = _get_direct_configured_entities("today_todo")
+        if not entities:
+            entities = _get_direct_configured_entities("todo")
+        return entities
+
+    if kind == "shopping_todo":
+        entities = _get_direct_configured_entities("shopping_todo")
+        if not entities:
+            entities = _get_direct_configured_entities("todo")
+        return entities
+
+    if kind == "todo":
+        entities = _get_direct_configured_entities("todo")
+        if not entities:
+            union: List[str] = []
+            for item in _get_direct_configured_entities("today_todo") + _get_direct_configured_entities("shopping_todo"):
+                if item not in union:
+                    union.append(item)
+            return union
+        return entities
+
+    return _get_direct_configured_entities(kind)
 
 
 # --- HTTP-Client -----------------------------------------------------------
@@ -313,9 +355,9 @@ async def _fetch_todo_list(client: httpx.AsyncClient, entity_id: str) -> dict:
     return {"entity_id": entity_id, "name": name, "items": items}
 
 
-async def fetch_todos() -> dict:
+async def fetch_todos(kind: str = "today_todo") -> dict:
     """Aggregiert die offenen Items aller konfigurierten To-do-Listen."""
-    entities = get_configured_entities("todo")
+    entities = get_configured_entities(kind)
     if not get_ha_token() or not entities:
         return {"available": False, "lists": []}
 
@@ -352,11 +394,11 @@ async def set_todo_status(entity_id: str, uid: str, completed: bool) -> None:
     await update_todo_item(entity_id, uid, completed=completed)
 
 
-async def fetch_todo_lists_summary() -> List[dict]:
+async def fetch_todo_lists_summary(kind: str = "shopping_todo") -> List[dict]:
     """Liefert Übersicht aller konfigurierten To-do-Listen (entity_id und Name)."""
     if not get_ha_token():
         raise HAUnavailable("SUPERVISOR_TOKEN nicht gesetzt")
-    entities = get_configured_entities("todo")
+    entities = get_configured_entities(kind)
     if not entities:
         return []
 

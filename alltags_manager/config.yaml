@@ -23,6 +23,8 @@ options:
   hermes_api_key: ""
   calendar_entities: []
   todo_entities: []
+  today_todo_entities: []
+  shopping_todo_entities: []
 schema:
   app_password: "password?"
   user_name: "str?"
@@ -31,4 +33,8 @@ schema:
   calendar_entities:
     - "str?"
   todo_entities:
+    - "str?"
+  today_todo_entities:
+    - "str?"
+  shopping_todo_entities:
     - "str?"

@@ -126,13 +126,22 @@ def ha_env(monkeypatch):
     """Setzt Token/Konfiguration/TZ für HA-Tests."""
 
     def apply(token="test-token", calendars="calendar.familie",
-              todos="todo.einkaufsliste", tz="Europe/Berlin"):
+              todos="todo.einkaufsliste", today_todos=None, shopping_todos=None,
+              tz="Europe/Berlin"):
         if token is None:
             monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
         else:
             monkeypatch.setenv("SUPERVISOR_TOKEN", token)
         monkeypatch.setenv("ALLTAGS_CALENDAR_ENTITIES", calendars)
         monkeypatch.setenv("ALLTAGS_TODO_ENTITIES", todos)
+        if today_todos is not None:
+            monkeypatch.setenv("ALLTAGS_TODAY_TODO_ENTITIES", today_todos)
+        else:
+            monkeypatch.delenv("ALLTAGS_TODAY_TODO_ENTITIES", raising=False)
+        if shopping_todos is not None:
+            monkeypatch.setenv("ALLTAGS_SHOPPING_TODO_ENTITIES", shopping_todos)
+        else:
+            monkeypatch.delenv("ALLTAGS_SHOPPING_TODO_ENTITIES", raising=False)
         if tz is None:
             monkeypatch.delenv("TZ", raising=False)
         else:
@@ -393,8 +402,12 @@ def test_config_yaml_ha_options(addon):
     assert config["homeassistant_api"] is True
     assert "calendar_entities" in config["options"]
     assert "todo_entities" in config["options"]
+    assert "today_todo_entities" in config["options"]
+    assert "shopping_todo_entities" in config["options"]
     assert "calendar_entities" in config["schema"]
     assert "todo_entities" in config["schema"]
+    assert "today_todo_entities" in config["schema"]
+    assert "shopping_todo_entities" in config["schema"]
 
 
 def test_overview_has_no_ha_fields(client):
@@ -525,6 +538,102 @@ def test_ha_multi_list_auth_and_error_handling(client, ha_env, ha_mock, app_fact
         assert auth_client.post("/api/ha/todos/items", json={"entity_id": "todo.einkaufsliste", "summary": "X"}).status_code == 401
         assert auth_client.put("/api/ha/todos/items/u1", json={"entity_id": "todo.einkaufsliste", "completed": True}).status_code == 401
         assert auth_client.post("/api/ha/todos/items/delete", json={"entity_id": "todo.einkaufsliste", "uids": ["u1"]}).status_code == 401
+
+
+def test_todos_isolation_today_and_shopping(client, ha_env, ha_mock):
+    """Prüft Trennung von today_todo_entities und shopping_todo_entities."""
+    ha_env(
+        today_todos="todo.heute_aufgaben",
+        shopping_todos="todo.supermarkt,todo.baumarkt",
+    )
+    ha_mock.states["todo.heute_aufgaben"] = "Heute"
+    ha_mock.states["todo.supermarkt"] = "Supermarkt"
+    ha_mock.states["todo.baumarkt"] = "Baumarkt"
+    ha_mock.todo_items["todo.heute_aufgaben"] = [
+        {"uid": "t1", "summary": "Hausaufgaben", "status": "needs_action"}
+    ]
+    ha_mock.todo_items["todo.supermarkt"] = [
+        {"uid": "s1", "summary": "Brot", "status": "needs_action"}
+    ]
+    ha_mock.todo_items["todo.baumarkt"] = [
+        {"uid": "b1", "summary": "Schrauben", "status": "needs_action"}
+    ]
+
+    # /api/ha/todos liefert nur today_todo_entities
+    todos_res = client.get("/api/ha/todos")
+    assert todos_res.status_code == 200
+    lists = todos_res.json()["lists"]
+    assert len(lists) == 1
+    assert lists[0]["entity_id"] == "todo.heute_aufgaben"
+
+    # /api/ha/todos/lists liefert nur shopping_todo_entities
+    lists_res = client.get("/api/ha/todos/lists")
+    assert lists_res.status_code == 200
+    shopping_lists = lists_res.json()
+    assert [l["entity_id"] for l in shopping_lists] == ["todo.supermarkt", "todo.baumarkt"]
+
+    # Toggle auf today_todo erlaubt, auf shopping_todo verboten (403)
+    assert client.post("/api/ha/todos/item", json={"entity_id": "todo.heute_aufgaben", "uid": "t1", "completed": True}).status_code == 200
+    assert client.post("/api/ha/todos/item", json={"entity_id": "todo.supermarkt", "uid": "s1", "completed": True}).status_code == 403
+
+    # Shopping endpoints auf shopping_todo erlaubt, auf today_todo verboten (403)
+    assert client.get("/api/ha/todos/lists/todo.supermarkt").status_code == 200
+    assert client.get("/api/ha/todos/lists/todo.heute_aufgaben").status_code == 403
+    assert client.post("/api/ha/todos/items", json={"entity_id": "todo.supermarkt", "summary": "Milch"}).status_code == 200
+    assert client.post("/api/ha/todos/items", json={"entity_id": "todo.heute_aufgaben", "summary": "Test"}).status_code == 403
+    assert client.put("/api/ha/todos/items/s1", json={"entity_id": "todo.supermarkt", "completed": True}).status_code == 200
+    assert client.put("/api/ha/todos/items/t1", json={"entity_id": "todo.heute_aufgaben", "completed": True}).status_code == 403
+    assert client.post("/api/ha/todos/items/delete", json={"entity_id": "todo.supermarkt", "uids": ["s1"]}).status_code == 200
+    assert client.post("/api/ha/todos/items/delete", json={"entity_id": "todo.heute_aufgaben", "uids": ["t1"]}).status_code == 403
+
+
+def test_todos_backwards_compatibility_fallback(client, ha_env, ha_mock, tmp_path, monkeypatch):
+    """Prüft Fallback auf todo_entities / ALLTAGS_TODO_ENTITIES."""
+    import crud.ha as ha
+
+    # 1. Fallback via Env-Variable ALLTAGS_TODO_ENTITIES
+    ha_env(todos="todo.legacy_liste", today_todos=None, shopping_todos=None)
+    assert ha.get_configured_entities("today_todo") == ["todo.legacy_liste"]
+    assert ha.get_configured_entities("shopping_todo") == ["todo.legacy_liste"]
+    assert ha.get_configured_entities("todo") == ["todo.legacy_liste"]
+
+    ha_mock.states["todo.legacy_liste"] = "Legacy"
+    ha_mock.todo_items["todo.legacy_liste"] = [
+        {"uid": "l1", "summary": "Alt", "status": "needs_action"}
+    ]
+
+    # Beide Endpunkte funktionieren mit Legacy-Konfiguration
+    assert client.get("/api/ha/todos").status_code == 200
+    assert client.get("/api/ha/todos/lists").status_code == 200
+    assert client.post("/api/ha/todos/item", json={"entity_id": "todo.legacy_liste", "uid": "l1", "completed": True}).status_code == 200
+    assert client.get("/api/ha/todos/lists/todo.legacy_liste").status_code == 200
+
+    # 2. Fallback via options.json
+    options_file = tmp_path / "options.json"
+    options_file.write_text(
+        json.dumps({"todo_entities": ["todo.json_legacy"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("ALLTAGS_TODO_ENTITIES", raising=False)
+    monkeypatch.delenv("ALLTAGS_TODAY_TODO_ENTITIES", raising=False)
+    monkeypatch.delenv("ALLTAGS_SHOPPING_TODO_ENTITIES", raising=False)
+    monkeypatch.setenv("ALLTAGS_OPTIONS_PATH", str(options_file))
+
+    assert ha.get_configured_entities("today_todo") == ["todo.json_legacy"]
+    assert ha.get_configured_entities("shopping_todo") == ["todo.json_legacy"]
+    assert ha.get_configured_entities("todo") == ["todo.json_legacy"]
+
+    # 3. Union-Fallback für 'todo', wenn today_todo und shopping_todo separat gesetzt sind
+    options_file.write_text(
+        json.dumps({
+            "today_todo_entities": ["todo.t1"],
+            "shopping_todo_entities": ["todo.s1", "todo.t1"],
+        }),
+        encoding="utf-8",
+    )
+    assert ha.get_configured_entities("today_todo") == ["todo.t1"]
+    assert ha.get_configured_entities("shopping_todo") == ["todo.s1", "todo.t1"]
+    assert ha.get_configured_entities("todo") == ["todo.t1", "todo.s1"]
 
 
 @pytest.mark.parametrize("addon", ADDONS)

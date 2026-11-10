@@ -215,7 +215,7 @@ async def read_ha_agenda(
 async def read_ha_todos(auth: dict = Depends(require_auth)):
     """Offene Items aller konfigurierten HA-To-do-Listen."""
     try:
-        data = await crud_ha.fetch_todos()
+        data = await crud_ha.fetch_todos(kind="today_todo")
     except crud_ha.HAUnavailable:
         return ha_schemas.TodosResponse(available=False, lists=[])
     return ha_schemas.TodosResponse(**data)
@@ -227,7 +227,7 @@ async def toggle_ha_todo(
     auth: dict = Depends(require_auth),
 ):
     """Hakt ein HA-To-do-Item ab bzw. setzt es zurück (Rückschreiben nach HA)."""
-    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+    if payload.entity_id not in crud_ha.get_configured_entities("today_todo"):
         raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
     try:
         await crud_ha.set_todo_status(payload.entity_id, payload.uid, payload.completed)
@@ -245,7 +245,7 @@ async def toggle_ha_todo(
 async def list_ha_todo_lists(auth: dict = Depends(require_auth)):
     """Liefert Übersicht aller konfigurierten To-do-Listen (entity_id und Name)."""
     try:
-        return await crud_ha.fetch_todo_lists_summary()
+        return await crud_ha.fetch_todo_lists_summary(kind="shopping_todo")
     except crud_ha.HAUnavailable:
         raise HTTPException(status_code=503, detail="Home Assistant ist nicht verfügbar.")
     except crud_ha.HARejected as exc:
@@ -258,7 +258,7 @@ async def list_ha_todo_lists(auth: dict = Depends(require_auth)):
 @app.get("/api/ha/todos/lists/{entity_id}", response_model=ha_schemas.TodoListResponse)
 async def get_ha_todo_list(entity_id: str, auth: dict = Depends(require_auth)):
     """Liefert alle Items einer bestimmten freigegebenen To-do-Liste."""
-    if entity_id not in crud_ha.get_configured_entities("todo"):
+    if entity_id not in crud_ha.get_configured_entities("shopping_todo"):
         raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
     try:
         return await crud_ha.fetch_single_todo_list(entity_id)
@@ -274,7 +274,7 @@ async def create_ha_todo_item(
     auth: dict = Depends(require_auth),
 ):
     """Erstellt ein neues Item auf der angegebenen HA To-do-Liste."""
-    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+    if payload.entity_id not in crud_ha.get_configured_entities("shopping_todo"):
         raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
     try:
         await crud_ha.add_todo_item(payload.entity_id, payload.summary, payload.description)
@@ -292,7 +292,7 @@ async def update_ha_todo_item(
     auth: dict = Depends(require_auth),
 ):
     """Aktualisiert Status oder Titel eines Items auf der angegebenen HA To-do-Liste."""
-    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+    if payload.entity_id not in crud_ha.get_configured_entities("shopping_todo"):
         raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
     try:
         await crud_ha.update_todo_item(payload.entity_id, uid, payload.completed, payload.summary)
@@ -309,7 +309,7 @@ async def delete_ha_todo_items(
     auth: dict = Depends(require_auth),
 ):
     """Löscht ein oder mehrere Items von der angegebenen HA To-do-Liste."""
-    if payload.entity_id not in crud_ha.get_configured_entities("todo"):
+    if payload.entity_id not in crud_ha.get_configured_entities("shopping_todo"):
         raise HTTPException(status_code=403, detail="Entity ist nicht freigegeben.")
     try:
         await crud_ha.remove_todo_items(payload.entity_id, payload.uids)
