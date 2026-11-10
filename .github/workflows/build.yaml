@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [aarch64, amd64]
+        arch: [aarch64]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [aarch64, amd64]
+        arch: [aarch64]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
